@@ -1,0 +1,20 @@
+# Company Valuation Platform Dependencies
+
+# HTTP client for async requests
+aiohttp>=3.9.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# DOCX report generation
+python-docx>=1.1.0
+
+# Optional: faster JSON parsing
+orjson>=3.9.0
+
+# Development dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+mypy>=1.5.0
