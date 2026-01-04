@@ -6,6 +6,7 @@ from .universe_researcher import UniverseResearcherAgent
 from .scene_architect import SceneArchitectAgent
 from .prompt_engineer import PromptEngineerAgent
 from .prompt_critic import PromptCriticAgent
+from .prompt_optimizer import PromptOptimizerAgent
 from .image_generator import ImageGeneratorAgent
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "SceneArchitectAgent",
     "PromptEngineerAgent",
     "PromptCriticAgent",
+    "PromptOptimizerAgent",
     "ImageGeneratorAgent",
 ]

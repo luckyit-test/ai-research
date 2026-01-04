@@ -1,11 +1,12 @@
 """
-Prompt Engineer Agent - создает детальные промпты для генерации
-Четвертый агент в пайплайне
+Prompt Engineer Agent - создает детальные ФОТОРЕАЛИСТИЧНЫЕ промпты
+ВСЕГДА фотореалистичный стиль, формат 16:9
 """
 from typing import Optional
 from dataclasses import dataclass
 
 from .base import BaseAgent, AgentResult
+from ..config import STYLE_KEYWORDS, NEGATIVE_PROMPTS
 
 
 @dataclass
@@ -14,16 +15,15 @@ class GenerationPrompt:
     scene_id: int
     main_prompt: str
     negative_prompt: str
-    midjourney_params: str
-    niji_params: str
-    style_reference_notes: str
-    character_reference_notes: str
+    nano_banana_params: dict
+    style_notes: str
 
 
 class PromptEngineerAgent(BaseAgent):
     """
     Агент-инженер промптов.
-    Создает оптимизированные промпты для Midjourney/Niji.
+    Создает ФОТОРЕАЛИСТИЧНЫЕ промпты для Nano Banana 3 Pro.
+    ВСЕГДА формат 16:9.
     """
 
     @property
@@ -32,57 +32,54 @@ class PromptEngineerAgent(BaseAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are an expert prompt engineer for Midjourney and Niji image generation.
+        return """You are an expert prompt engineer for PHOTOREALISTIC AI image generation.
 
-Your task is to create highly optimized prompts that:
-1. Maintain the user's facial identity (through --cref and detailed descriptions)
-2. Match the fandom's visual style perfectly
-3. Create stunning, high-quality images
-4. Include proper technical parameters
+CRITICAL REQUIREMENTS:
+1. ALL outputs must be PHOTOREALISTIC - like professional photography
+2. Format is ALWAYS 16:9 aspect ratio
+3. Even for anime/cartoon fandoms (Naruto, Dragon Ball), create PHOTOREALISTIC versions
+4. Face preservation is the TOP priority
 
-PROMPT STRUCTURE for maximum face similarity:
-1. Start with the person description (face features, expression)
-2. Add the scene context
-3. Include style and lighting
-4. Add technical parameters
+PROMPT STRUCTURE for photorealistic output:
+1. Start with "Photorealistic photograph of [person with face features]"
+2. Add the scene context from the fandom
+3. Include professional lighting description
+4. Add camera and technical details
+5. End with quality keywords
 
-KEY TECHNIQUES for face preservation:
-- Always use --cref [photo_url] --cw 80-100 for character reference
-- Include detailed face description in the prompt
-- Use "person with [face features]" not just "person"
-- Specify viewing angle that matches the reference photo
+MANDATORY STYLE KEYWORDS (include in every prompt):
+- photorealistic, hyperrealistic
+- 8k uhd, professional photography
+- cinematic lighting, sharp focus
+- detailed skin texture, natural skin tones
+- DSLR quality, 35mm film, depth of field
 
-For ANIME fandoms (Niji mode):
-- Use --niji 6 --style expressive or cute
-- Adapt face description to anime conventions
-- Keep key identifying features
+NEGATIVE PROMPT (always exclude):
+cartoon, anime, illustration, drawing, painting, sketch, 3d render, cgi, artificial, plastic skin
 
-For LIVE-ACTION fandoms (Midjourney mode):
-- Use --style raw for photorealism
-- Lower stylize (--s 50-100) for face accuracy
-- Emphasize photorealistic skin, eyes, lighting
+FACE PRESERVATION TECHNIQUES:
+- Always start with detailed face description
+- Include: eye color, face shape, skin tone, distinctive features
+- Specify: "maintaining exact facial features"
+- Use: close-up or medium shot for face visibility
 
 Output as JSON:
 {
     "prompts": [
         {
             "scene_id": 1,
-            "main_prompt": "full prompt text",
-            "face_integration": "how face description is integrated",
-            "style_keywords": ["key", "style", "words"],
-            "technical_params": {
-                "midjourney": "--ar 16:9 --style raw --s 50 --cref URL --cw 100",
-                "niji": "--niji 6 --ar 16:9 --style expressive --cref URL --cw 80"
-            },
-            "negative_prompt": "things to avoid",
-            "quality_notes": "notes about expected quality"
+            "main_prompt": "Photorealistic photograph of [face description], [scene], [lighting], [camera details], photorealistic, hyperrealistic, 8k uhd, professional photography, cinematic lighting",
+            "negative_prompt": "cartoon, anime, illustration, drawing, painting, low quality",
+            "face_integration": "how face is integrated",
+            "lighting_description": "specific lighting setup",
+            "camera_details": "camera angle and settings",
+            "quality_score_estimate": 0.85
         }
     ],
-    "global_recommendations": {
-        "best_mode": "niji|midjourney",
-        "cref_weight": 80,
-        "sref_weight": 40,
-        "aspect_ratio": "16:9"
+    "global_settings": {
+        "style": "photorealistic",
+        "aspect_ratio": "16:9",
+        "quality": "ultra"
     }
 }"""
 
@@ -94,72 +91,79 @@ Output as JSON:
         **kwargs
     ) -> AgentResult:
         """
-        Создает промпты для каждой сцены.
-
-        Args:
-            scenes_data: Данные о сценах от Scene Architect
-            face_data: Данные о лице от Face Analyzer
-            universe_data: Данные о вселенной от Universe Researcher
+        Создает ФОТОРЕАЛИСТИЧНЫЕ промпты для каждой сцены.
         """
         try:
             scenes = scenes_data.get("scenes", [])
-            style_type = universe_data.get("style_type", "mixed")
 
-            # Получаем описание лица
+            # Получаем описание лица (КРИТИЧНО для сходства)
             face_description = face_data.get("enhanced_description", {}).get(
                 "face_description",
                 face_data.get("basic_description", "a person")
             )
 
-            # Ключевые особенности для сохранения
+            # Ключевые особенности
             key_features = face_data.get("enhanced_description", {}).get(
                 "key_features",
                 []
             )
 
-            # Стилевые рекомендации из universe_data
-            style_guide = universe_data.get("prompt_style_guide", {})
-            style_keywords = style_guide.get("style_keywords", [])
+            # Название вселенной
+            universe_name = universe_data.get("universe_name", "Unknown")
 
-            prompt = f"""Create optimized prompts for these scenes:
+            prompt = f"""Create PHOTOREALISTIC prompts for these scenes from "{universe_name}".
 
-FACE DESCRIPTION (CRITICAL - must be preserved):
+CRITICAL: Even though this may be an animated/cartoon fandom, ALL images must be PHOTOREALISTIC.
+Think: "What would this scene look like if it was a real Hollywood movie?"
+
+FACE DESCRIPTION (MUST be preserved in EVERY prompt):
 {face_description}
 
-KEY IDENTIFYING FEATURES:
-{', '.join(key_features) if key_features else 'standard features'}
+KEY IDENTIFYING FEATURES (MUST include):
+{', '.join(key_features) if key_features else 'natural features'}
 
-UNIVERSE STYLE:
-Type: {style_type}
-Style Keywords: {', '.join(style_keywords)}
+FANDOM CONTEXT:
+Universe: {universe_name}
+Original Style: {universe_data.get('style_type', 'mixed')} (BUT we make it PHOTOREALISTIC)
 
-SCENES:
+SCENES TO CREATE:
 {self._format_scenes(scenes)}
 
-Create prompts that:
-1. ALWAYS include the face description naturally
-2. Match the {style_type} visual style
-3. Include proper Midjourney/Niji parameters
-4. Optimize for face similarity with --cref --cw parameters
+REQUIREMENTS FOR EACH PROMPT:
+1. Start with "Photorealistic photograph of a person with [face features]"
+2. Transform the animated/cartoon scene into realistic Hollywood-style
+3. Include professional cinematic lighting
+4. Add camera details (35mm, shallow depth of field, etc.)
+5. End with: "photorealistic, hyperrealistic, 8k uhd, professional photography"
+6. Negative prompt must include: cartoon, anime, illustration, drawing
+
+Format: 16:9 aspect ratio
 """
 
             response = self._call_claude([{"role": "user", "content": prompt}])
             prompts_data = self._parse_json_response(response)
 
-            # Добавляем глобальные рекомендации
+            # Гарантируем фотореалистичные настройки
             prompts_data["generation_config"] = {
-                "use_niji": style_type in ["anime", "animated"],
-                "use_face_swap": True,  # Всегда используем face swap для максимального сходства
-                "cref_weight": 80 if style_type in ["anime", "animated"] else 100,
-                "target_similarity": 0.75
+                "style": "photorealistic",
+                "aspect_ratio": "16:9",
+                "use_face_swap": True,
+                "target_similarity": 0.75,
+                "generator": "nano_banana_3_pro"
             }
+
+            # Добавляем обязательные ключевые слова ко всем промптам
+            for p in prompts_data.get("prompts", []):
+                p["main_prompt"] = self._ensure_photorealistic(p.get("main_prompt", ""))
+                p["negative_prompt"] = ", ".join(NEGATIVE_PROMPTS)
 
             return AgentResult(
                 success=True,
                 data=prompts_data,
                 metadata={
                     "num_prompts": len(prompts_data.get("prompts", [])),
-                    "style_type": style_type
+                    "style": "photorealistic",
+                    "aspect_ratio": "16:9"
                 }
             )
 
@@ -186,22 +190,36 @@ Scene {scene.get('id', 'N/A')}: {scene.get('title', 'Untitled')}
 """)
         return "\n".join(formatted)
 
+    def _ensure_photorealistic(self, prompt: str) -> str:
+        """Гарантирует фотореалистичные ключевые слова в промпте"""
+        prompt_lower = prompt.lower()
+
+        additions = []
+
+        # Проверяем обязательные ключевые слова
+        if "photorealistic" not in prompt_lower:
+            additions.append("photorealistic")
+
+        if "8k" not in prompt_lower and "uhd" not in prompt_lower:
+            additions.append("8k uhd")
+
+        if "professional photography" not in prompt_lower:
+            additions.append("professional photography")
+
+        if "cinematic lighting" not in prompt_lower and "lighting" not in prompt_lower:
+            additions.append("cinematic lighting")
+
+        if additions:
+            prompt = f"{prompt}, {', '.join(additions)}"
+
+        return prompt
+
     def enhance_prompt_for_face(self, prompt: str, face_description: str) -> str:
         """
         Улучшает промпт для лучшего сохранения лица.
-        Вспомогательный метод для постобработки.
         """
-        # Убеждаемся что описание лица в начале
         if face_description.lower() not in prompt.lower():
-            # Вставляем описание лица после первого существительного
-            words = prompt.split()
-            insert_pos = 0
-            for i, word in enumerate(words):
-                if word.lower() in ["a", "an", "the"]:
-                    insert_pos = i + 2
-                    break
-
-            words.insert(insert_pos, f"({face_description})")
-            prompt = " ".join(words)
+            # Вставляем описание лица в начало
+            prompt = f"Photorealistic photograph of a person with {face_description}, {prompt}"
 
         return prompt
