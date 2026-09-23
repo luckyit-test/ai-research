@@ -1,0 +1,114 @@
+:root {
+  --fg: #e9e6df;
+  --dim: #9a958b;
+  --accent: #f2b45a;
+  --panel: rgba(12, 12, 13, 0.62);
+  --line: rgba(255, 255, 255, 0.12);
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--fg);
+  font-family: var(--sans); -webkit-font-smoothing: antialiased;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+#view:active { cursor: grabbing; }
+.hidden { display: none !important; }
+
+/* loader */
+#loader {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 20;
+  background: radial-gradient(ellipse at 50% 120%, #2a2723 0%, #0b0b0b 55%, #000 100%);
+  transition: opacity .8s ease;
+}
+#loader.fade { opacity: 0; pointer-events: none; }
+.loader-inner { width: min(440px, calc(100vw - 32px)); text-align: left; }
+.brand { font-weight: 700; letter-spacing: .32em; font-size: 20px; }
+.brand span { color: var(--accent); }
+.loader-label { margin-top: 26px; font-family: var(--mono); font-size: 12px; color: var(--dim); letter-spacing: .06em; min-height: 1.4em; }
+.bar { height: 2px; background: rgba(255,255,255,.1); margin-top: 10px; overflow: hidden; }
+.bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .3s ease; }
+.loader-note { margin-top: 14px; font-size: 12px; color: #6f6b64; }
+
+/* hud */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hud button, #hud select, #hud input, #hud .panel, #minimap, #touch { pointer-events: auto; }
+.panel {
+  background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line); border-radius: 10px;
+}
+.telemetry { position: absolute; left: 16px; top: 16px; padding: 12px 14px; width: 250px; pointer-events: none !important; }
+.t-title { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; color: var(--dim); }
+.t-speed { font-family: var(--mono); font-size: 34px; font-weight: 600; margin: 4px 0 6px; font-variant-numeric: tabular-nums; }
+.t-speed small { font-size: 12px; color: var(--dim); margin-left: 6px; font-weight: 400; }
+.t-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 10px; }
+.t-grid label { display: block; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.t-grid b { font-family: var(--mono); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.t-status { margin-top: 8px; font-family: var(--mono); font-size: 10px; color: #8fcf8f; letter-spacing: .12em; }
+.t-status.warn { color: var(--accent); }
+
+.topbar { position: absolute; right: 16px; top: 16px; display: flex; gap: 8px; }
+.topbar button, .s-head .close {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; font: 500 12px var(--sans); cursor: pointer; backdrop-filter: blur(10px);
+}
+.topbar button:hover { border-color: rgba(255,255,255,.3); }
+
+.cam-mode {
+  position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--dim);
+  transition: opacity .6s ease; text-transform: uppercase;
+}
+.warning {
+  position: absolute; left: 50%; top: 46px; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 12px; letter-spacing: .12em; color: #111;
+  background: var(--accent); padding: 6px 12px; border-radius: 6px;
+}
+
+#minimap {
+  position: absolute; right: 16px; bottom: 16px; width: 180px; height: 180px;
+  border-radius: 50%; border: 1px solid var(--line); background: #000;
+}
+.hint {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  font-size: 12px; color: var(--dim); background: rgba(0,0,0,.4); padding: 6px 12px; border-radius: 6px;
+  max-width: calc(100vw - 240px); text-align: center; transition: opacity 1s ease;
+}
+
+.settings, .help { position: absolute; right: 16px; top: 62px; width: 320px; padding: 12px 14px; max-height: calc(100vh - 90px); overflow: auto; }
+.s-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; margin-bottom: 8px; }
+.s-head .close { padding: 2px 9px; font-size: 16px; }
+.row { display: grid; grid-template-columns: 110px 1fr 44px; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; }
+.row label { color: var(--dim); }
+.row select { grid-column: span 2; background: #151515; color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px; font: 12px var(--sans); }
+.row span { font-family: var(--mono); font-size: 11px; text-align: right; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; font-size: 12px; }
+.toggles input { accent-color: var(--accent); }
+.s-foot { margin-top: 12px; font-size: 10px; color: #6f6b64; }
+.help table { font-size: 12px; border-collapse: collapse; width: 100%; }
+.help td { padding: 3px 0; vertical-align: top; }
+.help td:first-child { font-family: var(--mono); color: var(--accent); width: 110px; }
+.help p { font-size: 12px; color: var(--dim); line-height: 1.5; }
+
+.fps { position: absolute; left: 16px; bottom: 12px; font-family: var(--mono); font-size: 10px; color: #5d5a55; }
+
+#touch { position: absolute; left: 20px; bottom: 60px; }
+.stick { width: 130px; height: 130px; border-radius: 50%; border: 1px solid var(--line); background: rgba(0,0,0,.25); position: relative; }
+.knob { width: 54px; height: 54px; border-radius: 50%; background: rgba(242,180,90,.55); position: absolute; left: 38px; top: 38px; }
+
+#error {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; background: #000;
+  color: var(--fg); font-size: 14px; padding: 24px; text-align: center; line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .telemetry { width: 200px; padding: 10px; }
+  .t-speed { font-size: 26px; }
+  .hint { display: none; }
+  #minimap { width: 120px; height: 120px; }
+  .settings, .help { left: 16px; right: 16px; width: auto; }
+}

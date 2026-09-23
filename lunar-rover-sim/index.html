@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Lunar Rover Sim</title>
+    <meta name="description" content="Симулятор лунохода в браузере: процедурный лунный рельеф, модель Perseverance (NASA), подвеска rocker-bogie, лунная гравитация." />
+    <link rel="stylesheet" href="./src/ui/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="loader">
+      <div class="loader-inner">
+        <div class="brand">LUNAR ROVER <span>SIM</span></div>
+        <div class="loader-label" id="loader-label">Инициализация…</div>
+        <div class="bar"><div class="bar-fill" id="loader-bar"></div></div>
+        <div class="loader-note">Рельеф, кратеры и камни генерируются процедурно на GPU</div>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="panel telemetry">
+        <div class="t-title">PERSEVERANCE · LUNAR OPS</div>
+        <div class="t-speed"><span id="h-speed">0.0</span><small>км/ч</small></div>
+        <div class="t-grid">
+          <div><label>Курс</label><b id="h-heading">000°</b></div>
+          <div><label>Тангаж</label><b id="h-pitch">0.0°</b></div>
+          <div><label>Крен</label><b id="h-roll">0.0°</b></div>
+          <div><label>Пробег</label><b id="h-odo">0 м</b></div>
+          <div><label>Высота</label><b id="h-alt">0 м</b></div>
+          <div><label>Солнце</label><b id="h-sun">20°</b></div>
+        </div>
+        <div class="t-status" id="h-status">СВЯЗЬ УСТАНОВЛЕНА</div>
+      </div>
+
+      <div class="topbar">
+        <button id="b-cam" title="Сменить камеру (C)">Камера</button>
+        <button id="b-gfx" title="Настройки (G)">Настройки</button>
+        <button id="b-help" title="Управление (H)">?</button>
+      </div>
+
+      <div class="cam-mode" id="cam-mode"></div>
+      <div class="warning hidden" id="warning"></div>
+
+      <canvas id="minimap" width="220" height="220"></canvas>
+
+      <div class="hint" id="hint">W/S — ход · A/D — поворот (на месте — разворот) · Shift — быстрее · Пробел — тормоз · C — камера · мышь — обзор</div>
+
+      <div class="panel settings hidden" id="settings">
+        <div class="s-head">Настройки<button class="close" data-close="settings">×</button></div>
+        <div class="row">
+          <label>Качество</label>
+          <select id="s-quality">
+            <option value="low">Низкое</option>
+            <option value="medium">Среднее</option>
+            <option value="high">Высокое</option>
+            <option value="ultra">Ультра</option>
+          </select>
+        </div>
+        <div class="row"><label>Солнце: азимут</label><input type="range" id="s-az" min="0" max="360" step="1" /><span id="v-az"></span></div>
+        <div class="row"><label>Солнце: высота</label><input type="range" id="s-el" min="3" max="75" step="0.5" /><span id="v-el"></span></div>
+        <div class="row"><label>Экспозиция</label><input type="range" id="s-exp" min="0.4" max="2.2" step="0.01" /><span id="v-exp"></span></div>
+        <div class="row"><label>Скорость</label>
+          <select id="s-speed">
+            <option value="0.042">Реальная (0.15 км/ч)</option>
+            <option value="1.2">Осторожная</option>
+            <option value="2.2" selected>Экспедиционная</option>
+            <option value="4.5">Ралли</option>
+          </select>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" id="t-ao" checked /> Ambient occlusion</label>
+          <label><input type="checkbox" id="t-bloom" checked /> Блики</label>
+          <label><input type="checkbox" id="t-film" checked /> Плёнка</label>
+          <label><input type="checkbox" id="t-stars" /> Звёзды</label>
+          <label><input type="checkbox" id="t-dust" checked /> Пыль</label>
+          <label><input type="checkbox" id="t-tracks" checked /> Следы</label>
+          <label><input type="checkbox" id="t-hud" checked /> Миникарта</label>
+        </div>
+        <div class="s-foot">Модель: NASA/JPL-Caltech Mars 2020 Perseverance (public domain)</div>
+      </div>
+
+      <div class="panel help hidden" id="help">
+        <div class="s-head">Управление<button class="close" data-close="help">×</button></div>
+        <table>
+          <tr><td>W / ↑</td><td>вперёд</td></tr>
+          <tr><td>S / ↓</td><td>назад</td></tr>
+          <tr><td>A D / ← →</td><td>поворот; без газа — разворот на месте</td></tr>
+          <tr><td>Shift</td><td>ускорение ×2</td></tr>
+          <tr><td>Пробел</td><td>тормоз</td></tr>
+          <tr><td>C</td><td>режим камеры</td></tr>
+          <tr><td>Мышь / колесо</td><td>обзор и зум</td></tr>
+          <tr><td>R</td><td>вернуть ровер на колёса</td></tr>
+          <tr><td>G / H</td><td>настройки / помощь</td></tr>
+          <tr><td>P</td><td>скриншот</td></tr>
+        </table>
+        <p>Гравитация Луны — 1,62 м/с². На гребнях ровер отрывается от грунта и летит по баллистике, пыль из-под колёс — без сопротивления воздуха. Подвеска rocker-bogie переваливает камни высотой до диаметра колеса.</p>
+      </div>
+
+      <div id="touch" class="hidden">
+        <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+      </div>
+      <div class="fps" id="fps"></div>
+    </div>
+
+    <div id="error" class="hidden"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

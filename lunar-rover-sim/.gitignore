@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dev/
+src/dev/
+*.log
+
+# Lunar rover simulator entry page
+!/index.html
