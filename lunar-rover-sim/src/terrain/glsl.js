@@ -153,6 +153,10 @@ float macroHeight(vec2 p, float minCell, out vec3 extra) {
   if (minCell <= 46.0)   craterLayer(p, 46.0, 106u, 0.50, 0.12, 0.36, 0, acc);
   h += acc.h;
 
+  // sink the world edge well below the curved horizon so it is never seen
+  float edge = smoothstep(10500.0, 15800.0, max(abs(p.x), abs(p.y)));
+  h = mix(h, -250.0, edge);
+
   float albedo = fbm(p / 2300.0 + 40.0, 4, 18u) * 0.6 + fbm(p / 260.0 - 13.0, 3, 19u) * 0.4;
   extra = vec3(acc.ejecta, albedo, acc.interior);
   return h;

@@ -31,6 +31,6 @@ export const DETAIL_B_FADE = [320, 900];
 
 // Sun shadow maps (cascades) cover this distance from the camera; beyond it
 // the baked horizon visibility takes over.
-export const CSM_FAR = 220;
+export const CSM_FAR = 180;
 // Baked "far occluder" visibility starts marching after this distance.
-export const BAKED_NEAR_SKIP = 140;
+export const BAKED_NEAR_SKIP = 120;

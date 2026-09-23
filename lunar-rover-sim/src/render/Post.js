@@ -14,7 +14,7 @@ const FinalShader = {
     uGrain: { value: 0.035 },
     uVignette: { value: 0.32 },
     uAberration: { value: 0.0014 },
-    uContrast: { value: 1.06 },
+    uContrast: { value: 1.09 },
     uResolution: { value: new THREE.Vector2(1, 1) },
   },
   vertexShader: /* glsl */ `
@@ -73,7 +73,7 @@ export class Post {
       this.composer.addPass(new RenderPass(scene, camera));
     }
     if (bloom) {
-      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.55, 2.2);
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.18, 0.4, 3.0);
       this.composer.addPass(this.bloomPass);
     }
     this.composer.addPass(new OutputPass());
@@ -84,6 +84,12 @@ export class Post {
     this.finalPass = new ShaderPass(FinalShader);
     this.finalPass.uniforms.uResolution.value.set(w, h);
     this.composer.addPass(this.finalPass);
+  }
+
+  setPixelRatio(pr) {
+    this.composer.setPixelRatio(pr);
+    const size = this.renderer.getSize(new THREE.Vector2());
+    this.setSize(size.x, size.y);
   }
 
   setSize(width, height) {

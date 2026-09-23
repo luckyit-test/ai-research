@@ -22,8 +22,8 @@ const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navig
 const PRESETS = {
   low: { pr: 0.75, seg: 32, lodK: 1.3, macro: 1024, far: 512, detail: 512, micro: 256, shadow: 1024, ao: false, bloom: false, smaa: true, halfAO: true, rocks: 0.6, tracks: 2048 },
   medium: { pr: 1, seg: 48, lodK: 1.45, macro: 2048, far: 1024, detail: 1024, micro: 512, shadow: 2048, ao: true, bloom: true, smaa: true, halfAO: true, rocks: 0.8, tracks: 2048 },
-  high: { pr: 1.5, seg: 64, lodK: 1.6, macro: 2048, far: 1024, detail: 1024, micro: 512, shadow: 2048, ao: true, bloom: true, smaa: true, halfAO: true, rocks: 1, tracks: 4096 },
-  ultra: { pr: 2, seg: 64, lodK: 2.0, macro: 2048, far: 1024, detail: 1024, micro: 512, shadow: 4096, ao: true, bloom: true, smaa: true, halfAO: false, rocks: 1.3, tracks: 4096 },
+  high: { pr: 1.5, bakedShadow: 2048, seg: 64, lodK: 1.6, macro: 2048, far: 1024, detail: 1024, micro: 512, shadow: 2048, ao: true, bloom: true, smaa: true, halfAO: true, rocks: 1, tracks: 4096 },
+  ultra: { pr: 2, bakedShadow: 2048, seg: 64, lodK: 2.0, macro: 2048, far: 1024, detail: 1024, micro: 512, shadow: 4096, ao: true, bloom: true, smaa: true, halfAO: false, rocks: 1.3, tracks: 4096 },
 };
 
 let savedPrefs = {};
@@ -103,7 +103,7 @@ async function main() {
 
   progress(0.62, 'Тени от горизонта');
   await nextFrame();
-  const baker = new ShadowBaker(renderer, data, Q.macro <= 1024 ? { macroShadowRes: 512, farShadowRes: 256 } : {});
+  const baker = new ShadowBaker(renderer, data, Q.macro <= 1024 ? { macroShadowRes: 512, farShadowRes: 256 } : { macroShadowRes: Q.bakedShadow || 1024, farShadowRes: 512 });
   baker.bake(sunDir);
   lunarUniforms.uSunVisMacro.value = baker.macroRT.texture;
   lunarUniforms.uSunVisFar.value = baker.farRT.texture;
@@ -116,7 +116,7 @@ async function main() {
   sun.shadow.camera.near = 1;
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.035;
-  sun.shadow.radius = 2.2;
+  sun.shadow.radius = 1.3;
   scene.add(sun);
 
   // environment: black sky above, sunlit regolith below (bounce light)
@@ -192,6 +192,11 @@ async function main() {
     sun.position.copy(sunDir);
     sky.uniforms.uSunDir.value.copy(sunDir);
   }
+  {
+    // Earth hangs low over the terrain ahead-left of the start heading
+    const ea = spawn.yaw + THREE.MathUtils.degToRad(38), ee = THREE.MathUtils.degToRad(12);
+    sky.uniforms.uEarthDir.value.set(Math.cos(ee) * Math.sin(ea), Math.sin(ee), Math.cos(ee) * Math.cos(ea)).normalize();
+  }
 
   // --- camera, post, input --------------------------------------------------
   const rig = new CameraRig(camera, canvas, (x, z) => data.heightAt(x, z));
@@ -207,6 +212,7 @@ async function main() {
     post.finalPass.uniforms.uVignette.value = p.film === false ? 0.12 : 0.32;
     post.finalPass.uniforms.uAberration.value = p.film === false ? 0 : 0.0014;
     sky.uniforms.uStars.value = p.stars ? 0.35 : 0;
+    sky.uniforms.uEarth.value = p.earth === false ? 0 : 1;
     dust.enabled = p.dust !== false;
     dust.points.visible = dust.enabled;
     terrain.uniforms.uTrackStrength.value = p.tracks === false ? 0 : 1;
@@ -333,9 +339,28 @@ async function main() {
   };
 
   let paused = params.has('test');
+  // dynamic resolution: keep the frame rate smooth on weaker GPUs
+  const dyn = { scale: 1, min: 0.55, t: 0, n: 0, sum: 0, enabled: !params.has('test') && savedPrefs.dynres !== false };
+  const applyScale = () => {
+    renderer.setPixelRatio(pixelRatio * dyn.scale);
+    renderer.setSize(innerWidth, innerHeight);
+    post.setPixelRatio(pixelRatio * dyn.scale);
+  };
   const frame = (now) => {
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const rawDt = (now - last) / 1000;
+    const dt = Math.min(0.1, rawDt);
     last = now;
+    if (dyn.enabled && !document.hidden) {
+      dyn.sum += rawDt; dyn.n++; dyn.t += rawDt;
+      if (dyn.t > 1.5) {
+        const avg = dyn.sum / dyn.n;
+        let next = dyn.scale;
+        if (avg > 1 / 42) next = Math.max(dyn.min, dyn.scale * 0.85);
+        else if (avg < 1 / 57 && dyn.scale < 1) next = Math.min(1, dyn.scale * 1.08);
+        if (Math.abs(next - dyn.scale) > 0.01) { dyn.scale = next; applyScale(); }
+        dyn.t = dyn.sum = dyn.n = 0;
+      }
+    }
     if (!paused) {
       input.read(physics.controls);
       update(dt);

@@ -5,12 +5,12 @@ import { MACRO_SIZE } from '../terrain/constants.js';
 
 // Size classes of the rock population (diameters in metres, densities per m²).
 const CLASSES = [
-  { name: 'boulder', cell: 64, min: 0.4, max: 3.2, alpha: 2.2, bg: 0.011, ej: 0.09, vis: 260, physics: true },
-  { name: 'cobble', cell: 16, min: 0.11, max: 0.4, alpha: 1.9, bg: 0.32, ej: 1.4, vis: 230, physics: true },
-  { name: 'pebble', cell: 8, min: 0.035, max: 0.11, alpha: 1.7, bg: 1.6, ej: 5.0, vis: 260, physics: false },
+  { name: 'boulder', cell: 64, min: 0.4, max: 3.2, alpha: 2.2, bg: 0.02, ej: 0.1, vis: 280, physics: true },
+  { name: 'cobble', cell: 16, min: 0.11, max: 0.4, alpha: 1.9, bg: 0.62, ej: 1.6, vis: 250, physics: true },
+  { name: 'pebble', cell: 8, min: 0.035, max: 0.11, alpha: 1.7, bg: 3.0, ej: 6.0, vis: 260, physics: false },
 ];
 
-const LOD_SCREEN = [0.05, 0.014]; // size/distance thresholds for LOD0 / LOD1
+const LOD_SCREEN = [0.05, 0.016, 0.006]; // size/distance thresholds for LOD0..LOD2
 
 function hashCell(ix, iz, salt) {
   let h = Math.imul(ix, 0x8da6b343) ^ Math.imul(iz, 0xd8163841) ^ Math.imul(salt + 1, 0x9e3779b1);
@@ -82,7 +82,7 @@ export class RockField {
   constructor(data, microTex, { variants = 8, quality = 1 } = {}) {
     this.data = data;
     this.quality = quality;
-    this.library = buildRockLibrary(variants, quality >= 1 ? [14, 6, 2] : [8, 4, 1]);
+    this.library = buildRockLibrary(variants, quality >= 1 ? [14, 6, 3, 1] : [8, 4, 2, 1]);
     this.group = new THREE.Group();
     this.group.name = 'rocks';
     this.cells = CLASSES.map(() => new Map());
@@ -105,10 +105,10 @@ export class RockField {
 
     // one InstancedMesh per variant × LOD
     this.meshes = [];
-    const caps = [900, 2600, 9000];
+    const caps = [900, 2600, 7000, 14000];
     for (let v = 0; v < this.library.length; v++) {
       this.meshes[v] = [];
-      for (let l = 0; l < 3; l++) {
+      for (let l = 0; l < 4; l++) {
         const m = new THREE.InstancedMesh(this.library[v].geos[l], this.material, caps[l]);
         m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(caps[l] * 3), 3);
@@ -126,6 +126,7 @@ export class RockField {
     this._pm = new THREE.Matrix4();
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
+    this._euler = new THREE.Euler();
     this._s = new THREE.Vector3();
     this._p = new THREE.Vector3();
     this._c = new THREE.Color();
@@ -185,8 +186,13 @@ export class RockField {
         const y = h - lib.bottom * s - bury * height;
         const tone = 0.62 + rnd() * 0.5;
         const warm = rnd() * 0.06;
+        this._q.setFromEuler(this._euler.set(tiltX, yaw, tiltZ));
+        this._s.setScalar(s);
+        this._p.set(x, y, z);
+        const m = new Float32Array(16);
+        this._m.compose(this._p, this._q, this._s).toArray(m);
         rocks.push({
-          x, y, z, d, s, yaw, tiltX, tiltZ, variant,
+          x, y, z, d, variant, m,
           top: y + lib.top * s,
           rad: Math.max(lib.halfX, lib.halfZ) * s * 0.85,
           color: [tone * (0.25 + warm * 0.7), tone * 0.238, tone * (0.222 - warm * 0.35)],
@@ -209,7 +215,7 @@ export class RockField {
   update(camera, force = false) {
     const cam = camera.position;
     camera.getWorldDirection(this._dir);
-    if (!force && cam.distanceToSquared(this._lastCam) < 1.5 * 1.5 && this._dir.dot(this._lastDir) > 0.995) return;
+    if (!force && cam.distanceToSquared(this._lastCam) < 2.2 * 2.2 && this._dir.dot(this._lastDir) > 0.996) return;
     this._lastCam.copy(cam);
     this._lastDir.copy(this._dir);
     this._pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -230,25 +236,30 @@ export class RockField {
           const dx = cx - cam.x, dz = cz - cam.z;
           const cd = Math.sqrt(dx * dx + dz * dz) - cls.cell * 0.71;
           if (cd > range) continue;
+          // whole-cell frustum test (with a margin for shadows)
+          const gy = this.data.heightAt(cx, cz);
+          this._sphere.center.set(cx, gy, cz);
+          this._sphere.radius = cls.cell * 0.75 + 12;
+          if (!this._frustum.intersectsSphere(this._sphere)) continue;
           const cell = this._cell(ci, i, j);
+          const visK = cls.vis * q;
           for (const r of cell.rocks) {
             const rx = r.x - cam.x, ry = r.y - cam.y, rz = r.z - cam.z;
-            const dist = Math.sqrt(rx * rx + ry * ry + rz * rz);
-            if (dist > r.d * cls.vis * q) continue;
+            const d2 = rx * rx + ry * ry + rz * rz;
+            const lim = r.d * visK;
+            if (d2 > lim * lim) continue;
+            const dist = Math.sqrt(d2);
             this._sphere.center.set(r.x, r.y, r.z);
             this._sphere.radius = r.d * (dist < 60 ? 6 : 1);
             if (!this._frustum.intersectsSphere(this._sphere)) continue;
             const ratio = r.d / Math.max(dist, 0.1);
-            const lod = ratio > LOD_SCREEN[0] ? 0 : ratio > LOD_SCREEN[1] ? 1 : 2;
+            const lod = ratio > LOD_SCREEN[0] ? 0 : ratio > LOD_SCREEN[1] ? 1 : ratio > LOD_SCREEN[2] ? 2 : 3;
             const mesh = this.meshes[r.variant][lod];
             const idx = counts[r.variant][lod];
             if (idx >= mesh.instanceMatrix.count) continue;
-            this._q.setFromEuler(new THREE.Euler(r.tiltX, r.yaw, r.tiltZ));
-            this._s.setScalar(r.s);
-            this._p.set(r.x, r.y, r.z);
-            this._m.compose(this._p, this._q, this._s);
-            mesh.setMatrixAt(idx, this._m);
-            mesh.instanceColor.setXYZ(idx, r.color[0], r.color[1], r.color[2]);
+            mesh.instanceMatrix.array.set(r.m, idx * 16);
+            const ca = mesh.instanceColor.array;
+            ca[idx * 3] = r.color[0]; ca[idx * 3 + 1] = r.color[1]; ca[idx * 3 + 2] = r.color[2];
             counts[r.variant][lod] = idx + 1;
             total++;
           }
@@ -256,7 +267,7 @@ export class RockField {
       }
     }
     for (let v = 0; v < this.meshes.length; v++) {
-      for (let l = 0; l < 3; l++) {
+      for (let l = 0; l < 4; l++) {
         const m = this.meshes[v][l];
         m.count = counts[v][l];
         m.instanceMatrix.clearUpdateRanges();

@@ -162,7 +162,7 @@ export class Hud {
     const sp = $('s-speed');
     sp.value = String(o.speed);
     sp.onchange = () => o.onSpeed(+sp.value);
-    const toggles = { 't-ao': 'ao', 't-bloom': 'bloom', 't-film': 'film', 't-stars': 'stars', 't-dust': 'dust', 't-tracks': 'tracks', 't-hud': 'minimap' };
+    const toggles = { 't-ao': 'ao', 't-bloom': 'bloom', 't-film': 'film', 't-stars': 'stars', 't-earth': 'earth', 't-dust': 'dust', 't-tracks': 'tracks', 't-hud': 'minimap' };
     for (const [id, key] of Object.entries(toggles)) {
       const box = $(id);
       const def = key === 'stars' ? false : true;

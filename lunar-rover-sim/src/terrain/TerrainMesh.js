@@ -113,6 +113,10 @@ vec4 tM2 = texture(uMicro, (mat2(0.28, 0.96, -0.96, 0.28) * tp) / (MICRO_TILE * 
 float tMf = 1.0 - smoothstep(12.0, 80.0, tDist);
 vec2 tGm = ((tM1.xy - 0.5) * 1.1 + (tM2.xy - 0.5) * 0.6) * tMf;
 tGrad += tGm;
+// mid-distance rubble: the micro tile scaled up reads as scattered stones
+vec4 tM3 = texture(uMicro, (mat2(0.8, 0.6, -0.6, 0.8) * tp) / (MICRO_TILE * 7.0) + 0.71);
+float tRf = smoothstep(14.0, 40.0, tDist) * (1.0 - smoothstep(350.0, 900.0, tDist));
+tGrad += (tM3.xy - 0.5) * 1.6 * tRf;
 // regolith mottling at metre scale (albedo only)
 float tMott = texture(uMicro, (mat2(0.6, -0.8, 0.8, 0.6) * tp) / (MICRO_TILE * 9.0)).z - 0.5
             + (texture(uMicro, tp / (MICRO_TILE * 31.0) + 0.13).z - 0.5) * 0.8;
@@ -138,7 +142,7 @@ float tSlope = 1.0 - tN.y;
 float tEj = max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw;
 float tAlb = uAlbedo * (1.0 + tMi.w * 0.16);
 tAlb *= 1.0 + tEj * 0.45;
-tAlb *= 1.0 + ((tM1.z - 0.5) * 0.3 + (tM2.z - 0.5) * 0.18) * tMf + tMott * 0.22;
+tAlb *= 1.0 + ((tM1.z - 0.5) * 0.3 + (tM2.z - 0.5) * 0.18) * tMf + tMott * 0.22 + (tM3.z - 0.5) * 0.3 * tRf;
 tAlb *= 1.0 + smoothstep(0.08, 0.45, tSlope) * 0.25;
 tAlb *= 1.0 - tRut * 0.22;
 diffuseColor.rgb = vec3(tAlb) * uAlbedoTint;
