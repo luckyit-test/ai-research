@@ -80,7 +80,7 @@ async function main() {
   const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.15, 40000);
 
   // start loading the rover while the terrain is generated
-  const roverPromise = RoverModel.load('./models/perseverance.glb', (f) => {
+  const roverPromise = RoverModel.load(window.ROVER_MODEL_URL || './models/perseverance.glb', (f) => {
     if (f < 1) loaderLabel.dataset.model = `${Math.round(f * 100)}%`;
   });
 
@@ -224,7 +224,12 @@ async function main() {
   let shadowRebake = null;
   hud.bindSettings({
     quality: qualityName,
-    onQuality: (q) => { savedPrefs.quality = q; savePrefs(); location.search = `?q=${q}`; },
+    onQuality: (q) => {
+      savedPrefs.quality = q;
+      savePrefs();
+      if (params.has('q')) location.search = `?q=${q}`;
+      else location.reload();
+    },
     onSun: (az, el, final) => {
       sunState.az = az; sunState.el = el;
       updateSunDir();

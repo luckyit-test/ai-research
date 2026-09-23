@@ -73,10 +73,24 @@ function splitMesh(mesh, toModel, classify) {
 }
 
 export class RoverModel {
+  /**
+   * Loads the rover. `url` is a .glb file, or a .js module whose default
+   * export is the GLB as base64 (for hosts that only serve web file types).
+   */
   static async load(url, onProgress) {
-    const gltf = await new GLTFLoader().loadAsync(url, (e) => {
-      if (onProgress && e.total) onProgress(e.loaded / e.total);
-    });
+    const loader = new GLTFLoader();
+    let gltf;
+    if (url.endsWith('.js')) {
+      const mod = await import(/* @vite-ignore */ url);
+      const bin = atob(mod.default);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      gltf = await loader.parseAsync(bytes.buffer, '');
+    } else {
+      gltf = await loader.loadAsync(url, (e) => {
+        if (onProgress && e.total) onProgress(e.loaded / e.total);
+      });
+    }
     return new RoverModel(gltf.scene);
   }
 
