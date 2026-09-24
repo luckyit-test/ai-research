@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import './render/stableShadows.js';
 import { SunLight } from 'three/examples/jsm/lights/SunLight.js';
 import { TerrainData } from './terrain/TerrainData.js';
 import { TerrainMesh } from './terrain/TerrainMesh.js';
@@ -170,6 +171,30 @@ async function main() {
   const rocks = new RockField(data, data.microTex, { quality: Q.rocks });
   scene.add(rocks.group);
 
+  // photographic surface textures (generated, made seamless offline); the
+  // procedural look stays as a fallback if they fail to load
+  {
+    const loader = new THREE.TextureLoader();
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    const load = (name) => new Promise((resolve) => loader.load(`./textures/${name}`, (t) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = Math.min(8, maxAniso);
+      t.colorSpace = THREE.NoColorSpace;
+      resolve(t);
+    }, undefined, () => resolve(null)));
+    Promise.all(['regolith_albedo.jpg', 'regolith_normal.jpg', 'rubble_albedo.jpg', 'rubble_normal.jpg',
+      'basalt_albedo.jpg', 'basalt_normal.jpg', 'breccia_albedo.jpg', 'breccia_normal.jpg'].map(load)).then((t) => {
+      if (t.some((x) => !x)) { console.warn('surface textures missing, using procedural look'); return; }
+      const u = terrain.uniforms;
+      u.uRegA.value = t[0]; u.uRegN.value = t[1]; u.uRubA.value = t[2]; u.uRubN.value = t[3];
+      u.uPhoto.value = 1;
+      const r = rocks.photoUniforms;
+      r.uRockA0.value = t[4]; r.uRockN0.value = t[5]; r.uRockA1.value = t[6]; r.uRockN1.value = t[7];
+      r.uPhoto.value = 1;
+      window.__texturesReady = true;
+    });
+  }
+
   const sky = new Sky();
   sky.setClock(clock);
   scene.add(sky.mesh);
@@ -311,13 +336,19 @@ async function main() {
 
   const dustColor = new THREE.Color();
   let autoExp = 1;
+  let shadowSunDir = null;
   const smooth = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   const updateSky = (dt) => {
     clock.update(dt);
     const elDeg = THREE.MathUtils.radToDeg(clock.sunElevation);
     const disk = sunDisk();
     const night = 1 - smooth(-1.5, 4, elDeg);
-    sun.position.copy(sunDir);
+    // the shadow direction moves in small steps: re-rasterising the shadow
+    // map every frame for a slowly moving Sun makes every edge crawl
+    if (!shadowSunDir || shadowSunDir.angleTo(sunDir) > 0.0006) {
+      shadowSunDir = (shadowSunDir || new THREE.Vector3()).copy(sunDir);
+      sun.position.copy(sunDir);
+    }
     sun.intensity = 3.6 * disk;
     earthLight.position.copy(clock.earthDir);
     earthLight.intensity = 0.3 * clock.earthPhase * (0.15 + 0.85 * night);

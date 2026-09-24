@@ -20,6 +20,7 @@ function hashCell(ix, iz, salt) {
 }
 
 const ROCK_VERTEX_PARS = /* glsl */ `
+varying float vRockSel;
 varying vec3 vRockWP;
 varying vec3 vRockObj;
 varying vec3 vRockN;
@@ -35,10 +36,26 @@ const ROCK_VERTEX = /* glsl */ `
   vRockWP = rwp.xyz;
   float sc = length(im[0].xyz);
   vRockObj = transformed * sc + im[3].xyz * 0.37;
+  vRockSel = fract(sin(dot(im[3].xz, vec2(12.9898, 78.233))) * 43758.5453);
   vRockN = normalize(mat3(modelMatrix) * mat3(im) * objectNormal);
 }
 `;
 const ROCK_FRAGMENT_PARS = /* glsl */ `
+varying float vRockSel;
+uniform sampler2D uRockA0;
+uniform sampler2D uRockN0;
+uniform sampler2D uRockA1;
+uniform sampler2D uRockN1;
+uniform float uPhoto;
+// triplanar photographic rock: albedo (rgb, mean 0.5) and world-space normal gradient
+void triPhoto(sampler2D A, sampler2D N, vec3 p, vec3 n, float scale, out vec3 alb, out vec3 grad) {
+  vec3 w = pow(abs(n), vec3(4.0));
+  w /= (w.x + w.y + w.z);
+  vec2 ux = p.zy * scale, uy = p.xz * scale + 0.5, uz = p.xy * scale + 0.25;
+  alb = texture(A, ux).rgb * w.x + texture(A, uy).rgb * w.y + texture(A, uz).rgb * w.z;
+  vec3 nx = texture(N, ux).xyz * 2.0 - 1.0, ny = texture(N, uy).xyz * 2.0 - 1.0, nz = texture(N, uz).xyz * 2.0 - 1.0;
+  grad = w.x * vec3(0.0, -nx.y, -nx.x) / max(nx.z, 0.3) + w.y * vec3(-ny.x, 0.0, -ny.y) / max(ny.z, 0.3) + w.z * vec3(-nz.x, -nz.y, 0.0) / max(nz.z, 0.3);
+}
 varying vec3 vRockWP;
 varying vec3 vRockObj;
 varying vec3 vRockN;
@@ -67,12 +84,19 @@ vec4 rm1 = triMicro(vRockObj, rN, 2.3);
 vec4 rm2 = triMicro(vRockObj * 1.0, rN, 0.55);
 float rDust = smoothstep(0.35, 0.95, rN.y + (rm2.w - 0.5) * 0.6);
 vec3 rockAlb = diffuseColor.rgb * (0.82 + (rm1.w - 0.5) * 0.5 + (rm2.w - 0.5) * 0.3);
+vec3 phA, phG = vec3(0.0);
+if (uPhoto > 0.0) {
+  if (vRockSel < 0.6) triPhoto(uRockA0, uRockN0, vRockObj, rN, 1.4, phA, phG);
+  else triPhoto(uRockA1, uRockN1, vRockObj, rN, 1.4, phA, phG);
+  rockAlb = mix(rockAlb, diffuseColor.rgb * phA * 1.9, uPhoto * 0.85);
+  phG *= uPhoto;
+}
 diffuseColor.rgb = mix(rockAlb, uRegolith * (0.95 + (rm1.w - 0.5) * 0.3), rDust * 0.75);
 `;
 const ROCK_FRAGMENT_NORMAL = /* glsl */ `
 #include <normal_fragment_maps>
 {
-  vec3 gW = rm1.xyz * 0.55 + rm2.xyz * 0.35;
+  vec3 gW = rm1.xyz * (0.55 - 0.3 * uPhoto) + rm2.xyz * 0.35 + phG * 0.5;
   vec3 nW = normalize(rN - gW + rN * dot(gW, rN));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 }
@@ -88,10 +112,17 @@ export class RockField {
     this.cells = CLASSES.map(() => new Map());
     this.regolith = new THREE.Color(0.2, 0.19, 0.178);
 
+    const blank = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1);
+    blank.needsUpdate = true;
+    this.photoUniforms = {
+      uRockA0: { value: blank }, uRockN0: { value: blank }, uRockA1: { value: blank }, uRockN1: { value: blank },
+      uPhoto: { value: 0 },
+    };
     this.material = new THREE.MeshStandardMaterial({ roughness: 0.93, metalness: 0 });
     this.material.onBeforeCompile = (shader) => {
       shader.uniforms.uMicro = { value: microTex };
       shader.uniforms.uRegolith = { value: this.regolith };
+      Object.assign(shader.uniforms, this.photoUniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\n' + ROCK_VERTEX_PARS)
         .replace('#include <worldpos_vertex>', ROCK_VERTEX);

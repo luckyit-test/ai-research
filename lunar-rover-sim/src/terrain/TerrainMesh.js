@@ -56,6 +56,7 @@ const SKIRT_K = 0.035;
 export const TERRAIN_VERTEX_PARS = (data) => /* glsl */ `
 attribute vec4 aNode;
 uniform vec3 uCamPos;
+uniform vec3 uFadePos; // camera position snapped to a coarse grid: detail fades without swimming
 uniform float uHeightOffset;
 varying vec3 vTerrainPos;
 ${terrainSamplingGLSL(data.macroRes, data.farRes)}
@@ -70,7 +71,7 @@ vec4 macroInfoLod(vec2 p) {
 
 const TERRAIN_VERTEX_BEGIN = /* glsl */ `
 vec2 tWp = aNode.xy + position.xz * aNode.z;
-float tCamDist = length(tWp - uCamPos.xz);
+float tCamDist = length(tWp - uFadePos.xz);
 float tH = baseHeight(tWp) + detailHeightV(tWp, tCamDist) + uHeightOffset;
 tH -= position.y * (aNode.z * ${f(SKIRT_K)} + 0.4);
 vec3 transformed = vec3(tWp.x, tH, tWp.y);
@@ -86,6 +87,17 @@ uniform vec4 uTrackWin; // center x, center z, world size, texel size (m)
 uniform float uTrackStrength;
 uniform vec3 uAlbedoTint;
 uniform float uAlbedo;
+// photographic regolith tiles (albedo normalised to mean 0.5, tangent normals)
+uniform sampler2D uRegA;
+uniform sampler2D uRegN;
+uniform sampler2D uRubA;
+uniform sampler2D uRubN;
+uniform float uPhoto;
+
+vec2 nrmGrad(vec4 n) {
+  vec3 v = n.xyz * 2.0 - 1.0;
+  return -v.xy / max(v.z, 0.25);
+}
 
 vec3 trackSample(vec2 p) {
   // returns (rut depth, tread, fade) — the track map is a toroidal window
@@ -121,6 +133,24 @@ tGrad += (tM3.xy - 0.5) * 1.6 * tRf;
 float tMott = texture(uMicro, (mat2(0.6, -0.8, 0.8, 0.6) * tp) / (MICRO_TILE * 9.0)).z - 0.5
             + (texture(uMicro, tp / (MICRO_TILE * 31.0) + 0.13).z - 0.5) * 0.8;
 
+// photographic regolith, sampled at two rotated scales to hide tiling,
+// with rubble patches where the ground is rocky
+const mat2 PR1 = mat2(0.94, 0.34, -0.34, 0.94);
+const mat2 PR2 = mat2(-0.47, 0.88, -0.88, -0.47);
+vec2 pu1 = (PR1 * tp) / 1.7;
+vec2 pu2 = (PR2 * tp) / 5.9 + 0.37;
+vec3 pa1 = texture(uRegA, pu1).rgb;
+vec3 pa2 = texture(uRegA, pu2).rgb;
+float pmix = smoothstep(-0.25, 0.25, tMott);
+vec3 pAlb = mix(pa1, pa2, 0.35 + 0.3 * pmix);
+vec2 pGrad = mix(nrmGrad(texture(uRegN, pu1)), nrmGrad(texture(uRegN, pu2)) * 0.45, 0.35);
+vec2 ru = (mat2(0.2, -0.98, 0.98, 0.2) * tp) / 3.3 + 0.61;
+float rubble = clamp(smoothstep(0.05, 0.5, max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw + (tMott + 0.1) * 0.9), 0.0, 1.0) * 0.85;
+pAlb = mix(pAlb, texture(uRubA, ru).rgb, rubble);
+pGrad = mix(pGrad, nrmGrad(texture(uRubN, ru)), rubble);
+float pNf = (1.0 - smoothstep(20.0, 140.0, tDist)) * uPhoto;
+tGrad += pGrad * 0.32 * pNf;
+
 // rover tracks
 float tRut = 0.0;
 if (uTrackStrength > 0.0 && tDist < 90.0) {
@@ -142,10 +172,11 @@ float tSlope = 1.0 - tN.y;
 float tEj = max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw;
 float tAlb = uAlbedo * (1.0 + tMi.w * 0.16);
 tAlb *= 1.0 + tEj * 0.45;
-tAlb *= 1.0 + ((tM1.z - 0.5) * 0.3 + (tM2.z - 0.5) * 0.18) * tMf + tMott * 0.22 + (tM3.z - 0.5) * 0.3 * tRf;
+tAlb *= 1.0 + ((tM1.z - 0.5) * 0.3 + (tM2.z - 0.5) * 0.18) * tMf * (1.0 - uPhoto * 0.7) + tMott * 0.22 + (tM3.z - 0.5) * 0.3 * tRf;
+vec3 pCol = mix(vec3(1.0), pAlb * 2.0, uPhoto);
 tAlb *= 1.0 + smoothstep(0.08, 0.45, tSlope) * 0.25;
 tAlb *= 1.0 - tRut * 0.22;
-diffuseColor.rgb = vec3(tAlb) * uAlbedoTint;
+diffuseColor.rgb = vec3(tAlb) * uAlbedoTint * pCol;
 `;
 
 const TERRAIN_FRAGMENT_NORMAL = /* glsl */ `
@@ -169,9 +200,12 @@ export class TerrainMesh {
       uTrackStrength: { value: 0 },
       ...sharedUniforms,
       uCamPos: { value: new THREE.Vector3() },
+      uFadePos: { value: new THREE.Vector3() },
       uHeightOffset: { value: 0 },
       uAlbedoTint: { value: new THREE.Color(1.0, 0.955, 0.9) },
       uAlbedo: { value: 0.2 },
+      uRegA: { value: blank }, uRegN: { value: blank }, uRubA: { value: blank }, uRubN: { value: blank },
+      uPhoto: { value: 0 },
     };
 
     // --- visible terrain -------------------------------------------------
@@ -251,6 +285,10 @@ export class TerrainMesh {
   update(camera) {
     const cam = camera.position;
     this.uniforms.uCamPos.value.copy(cam);
+    // snap the detail-fade origin so distant geometry does not "breathe"
+    // (and its shadows do not crawl) while the camera moves
+    const f = this.uniforms.uFadePos.value;
+    if (Math.abs(cam.x - f.x) > 48 || Math.abs(cam.z - f.z) > 48 || f.lengthSq() === 0) f.set(Math.round(cam.x / 32) * 32, 0, Math.round(cam.z / 32) * 32);
     this._m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     this._frustum.setFromProjectionMatrix(this._m);
 
@@ -259,7 +297,10 @@ export class TerrainMesh {
     const half = this.rootSize / 2;
     const castRange = CSM_FAR + 140;
     this._select(-half, -half, this.rootSize, cam, visible, true, false);
-    this._select(-half, -half, this.rootSize, cam, casters, false, true, castRange);
+    // shadow casters are selected around a snapped point so their LOD changes rarely
+    const snap = this._castSnap || (this._castSnap = new THREE.Vector3(1e9, 0, 0));
+    if (Math.abs(cam.x - snap.x) > 12 || Math.abs(cam.z - snap.z) > 12 || Math.abs(cam.y - snap.y) > 12) snap.set(Math.round(cam.x / 8) * 8, Math.round(cam.y / 8) * 8, Math.round(cam.z / 8) * 8);
+    this._select(-half, -half, this.rootSize, snap, casters, false, true, castRange);
 
     this.nodeAttr = this._grow(this.nodeAttr, this.geometry, 'aNode', visible.length / 4);
     this.nodeAttr.array.set(visible);
