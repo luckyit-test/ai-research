@@ -15,6 +15,9 @@ import { Dust } from './fx/Dust.js';
 import { CameraRig, MODE_NAMES } from './core/CameraRig.js';
 import { Input } from './core/Input.js';
 import { Hud } from './ui/Hud.js';
+import { LunarClock } from './sim/LunarClock.js';
+import { PowerSystem } from './sim/PowerSystem.js';
+import { SolarArray } from './rover/SolarArray.js';
 
 const params = new URLSearchParams(location.search);
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && innerWidth < 900);
@@ -70,7 +73,8 @@ async function main() {
   renderer.setPixelRatio(pixelRatio);
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = savedPrefs.exposure ?? 1.3;
+  let userExposure = savedPrefs.exposure ?? 1.3;
+  renderer.toneMappingExposure = userExposure;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -90,16 +94,13 @@ async function main() {
   await data.generate((f, l) => progress(f * 0.6, l));
 
   // --- sun ---------------------------------------------------------------
-  const sunState = {
-    az: savedPrefs.sunAz ?? 250,
-    el: savedPrefs.sunEl ?? 21,
-  };
-  const sunDir = new THREE.Vector3();
-  const updateSunDir = () => {
-    const az = THREE.MathUtils.degToRad(sunState.az), el = THREE.MathUtils.degToRad(sunState.el);
-    sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)).normalize();
-  };
-  updateSunDir();
+  // --- lunar time & sun -----------------------------------------------------
+  const clock = new LunarClock({
+    latitude: 26,
+    dayFraction: savedPrefs.lunarT ?? 0.317,
+    timeScale: savedPrefs.timeScale ?? 1000,
+  });
+  const sunDir = clock.sunDir;
 
   progress(0.62, 'Тени от горизонта');
   await nextFrame();
@@ -107,6 +108,10 @@ async function main() {
   baker.bake(sunDir);
   lunarUniforms.uSunVisMacro.value = baker.macroRT.texture;
   lunarUniforms.uSunVisFar.value = baker.farRT.texture;
+  baker.onSwap = (macro, far) => {
+    lunarUniforms.uSunVisMacro.value = macro;
+    lunarUniforms.uSunVisFar.value = far;
+  };
 
   const sun = new SunLight(0xfff5ea, 3.6);
   sun.position.copy(sunDir);
@@ -118,26 +123,40 @@ async function main() {
   sun.shadow.normalBias = 0.035;
   sun.shadow.radius = 1.3;
   scene.add(sun);
+  // earthshine: the only light during the two-week lunar night
+  const earthLight = new THREE.DirectionalLight(0xb4c8ff, 0);
+  earthLight.position.copy(clock.earthDir);
+  scene.add(earthLight);
 
   // environment: black sky above, sunlit regolith below (bounce light)
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
   const envMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
-    uniforms: { uGround: { value: new THREE.Color(0.105, 0.098, 0.09) } },
+    uniforms: { uGround: { value: new THREE.Color(0.105, 0.098, 0.09) }, uEarthGlow: { value: new THREE.Color(0, 0, 0) }, uEarthDir: { value: clock.earthDir.clone() } },
     vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader: `uniform vec3 uGround; varying vec3 vP;
+    fragmentShader: `uniform vec3 uGround; uniform vec3 uEarthGlow; uniform vec3 uEarthDir; varying vec3 vP;
       void main(){ vec3 d = normalize(vP); float g = smoothstep(0.04, -0.12, d.y); float hz = exp(-abs(d.y) * 14.0) * 0.35;
-      gl_FragColor = vec4(uGround * (g + hz), 1.0); }`,
+      float e = pow(max(dot(d, uEarthDir), 0.0), 600.0);
+      gl_FragColor = vec4(uGround * (g + hz) + uEarthGlow * e, 1.0); }`,
   });
   envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), envMat));
-  const updateEnv = () => {
-    const k = Math.max(0.15, Math.sin(THREE.MathUtils.degToRad(sunState.el)) / Math.sin(THREE.MathUtils.degToRad(21)));
+  // ground bounce from sunlit regolith by day, from earthlit regolith by night
+  let envKey = -1;
+  const updateEnv = (force = false) => {
+    const sinEl = Math.max(0, sunDir.y);
+    const day = (sinEl / Math.sin(THREE.MathUtils.degToRad(21))) * sunDisk();
+    const night = 0.05 * clock.earthPhase;
+    const k = Math.max(day, 0) + night;
+    if (!force && envKey > 0 && Math.abs(k - envKey) / envKey < 0.06) return;
+    envKey = Math.max(k, 1e-4);
     envMat.uniforms.uGround.value.setRGB(0.085 * k, 0.08 * k, 0.073 * k);
+    envMat.uniforms.uEarthGlow.value.setRGB(0.5, 0.62, 0.9).multiplyScalar(clock.earthPhase * 0.04);
     if (scene.environment) scene.environment.dispose();
     scene.environment = pmrem.fromScene(envScene, 0.02).texture;
   };
-  updateEnv();
+  const sunDisk = () => THREE.MathUtils.clamp((sunDir.y + 0.00465) / 0.0093, 0, 1);
+  updateEnv(true);
 
   // --- world objects ------------------------------------------------------
   progress(0.68, 'Лунный грунт');
@@ -152,8 +171,7 @@ async function main() {
   scene.add(rocks.group);
 
   const sky = new Sky();
-  sky.uniforms.uSunDir.value.copy(sunDir);
-  sky.uniforms.uStars.value = savedPrefs.stars ? 0.35 : 0;
+  sky.setClock(clock);
   scene.add(sky.mesh);
 
   const dust = new Dust(isMobile ? 5000 : 14000);
@@ -168,8 +186,11 @@ async function main() {
     fail('Не удалось загрузить модель ровера (models/perseverance.glb). Запустите через HTTP-сервер: npm run dev');
     return;
   }
-  for (const m of rover.materials) patchMaterial(m, { brdf: false });
+  const solar = new SolarArray();
+  rover.body.add(solar.root);
+  for (const m of [...rover.materials, ...solar.materials]) patchMaterial(m, { brdf: false });
   scene.add(rover.root);
+  const power = new PowerSystem(data, { capacityWh: 4000, soc: savedPrefs.soc ?? 0.78 });
 
   // --- physics ------------------------------------------------------------
   const ground = {
@@ -180,30 +201,18 @@ async function main() {
   physics.maxSpeed = savedPrefs.speed ?? 2.2;
 
   const spawn = findSpawn(data);
+  // face so that the Sun lights the scene from behind-right, like a photo
+  spawn.yaw = Math.atan2(sunDir.x, sunDir.z) - THREE.MathUtils.degToRad(222);
   rocks._buildPhysics(spawn.x, spawn.z);
   physics.reset(spawn.x, spawn.z, spawn.yaw);
-
-  // sun relative to the start heading so the first view reads like a photo
-  if (savedPrefs.sunAz === undefined) {
-    sunState.az = THREE.MathUtils.radToDeg(spawn.yaw) + 222;
-    sunState.az = ((sunState.az % 360) + 360) % 360;
-    updateSunDir();
-    baker.bake(sunDir);
-    sun.position.copy(sunDir);
-    sky.uniforms.uSunDir.value.copy(sunDir);
-  }
-  {
-    // Earth hangs low over the terrain ahead-left of the start heading
-    const ea = spawn.yaw + THREE.MathUtils.degToRad(38), ee = THREE.MathUtils.degToRad(12);
-    sky.uniforms.uEarthDir.value.set(Math.cos(ee) * Math.sin(ea), Math.sin(ee), Math.cos(ee) * Math.cos(ea)).normalize();
-  }
 
   // --- camera, post, input --------------------------------------------------
   const rig = new CameraRig(camera, canvas, (x, z) => data.heightAt(x, z));
   const post = new Post(renderer, scene, camera, { ao: Q.ao, bloom: Q.bloom, smaa: Q.smaa, halfResAO: Q.halfAO });
   const input = new Input();
-  const hud = new Hud({ data, physics, rig, sunState });
+  const hud = new Hud({ data, physics, rig, clock, power });
 
+  const skyPrefs = { stars: true, earth: true };
   const applyToggles = () => {
     const p = savedPrefs;
     if (post.aoPass) post.aoPass.enabled = p.ao !== false;
@@ -211,8 +220,8 @@ async function main() {
     post.finalPass.uniforms.uGrain.value = p.film === false ? 0 : 0.035;
     post.finalPass.uniforms.uVignette.value = p.film === false ? 0.12 : 0.32;
     post.finalPass.uniforms.uAberration.value = p.film === false ? 0 : 0.0014;
-    sky.uniforms.uStars.value = p.stars ? 0.35 : 0;
-    sky.uniforms.uEarth.value = p.earth === false ? 0 : 1;
+    skyPrefs.stars = p.stars !== false;
+    skyPrefs.earth = p.earth !== false;
     dust.enabled = p.dust !== false;
     dust.points.visible = dust.enabled;
     terrain.uniforms.uTrackStrength.value = p.tracks === false ? 0 : 1;
@@ -230,20 +239,17 @@ async function main() {
       if (params.has('q')) location.search = `?q=${q}`;
       else location.reload();
     },
-    onSun: (az, el, final) => {
-      sunState.az = az; sunState.el = el;
-      updateSunDir();
-      sun.position.copy(sunDir);
-      sky.uniforms.uSunDir.value.copy(sunDir);
-      clearTimeout(shadowRebake);
-      shadowRebake = setTimeout(() => { baker.bake(sunDir); updateEnv(); }, final ? 0 : 120);
-      savedPrefs.sunAz = az; savedPrefs.sunEl = el; savePrefs();
+    onTime: (t, final) => {
+      clock.setDayFraction(t);
+      savedPrefs.lunarT = clock.t; savePrefs();
+      if (final) { baker.bake(sunDir); updateEnv(true); } else if (!baker.busy) baker.begin(sunDir);
     },
-    onExposure: (v) => { renderer.toneMappingExposure = v; savedPrefs.exposure = v; savePrefs(); },
+    onTimeScale: (v) => { clock.timeScale = v; savedPrefs.timeScale = v; savePrefs(); hud.flashMode(`Ход времени: ${v === 0 ? 'пауза' : '×' + v}`); },
+    onExposure: (v) => { userExposure = v; savedPrefs.exposure = v; savePrefs(); },
     onSpeed: (v) => { physics.maxSpeed = v; savedPrefs.speed = v; savePrefs(); },
     onToggle: (key, v) => { savedPrefs[key] = v; savePrefs(); applyToggles(); },
     prefs: savedPrefs,
-    exposure: renderer.toneMappingExposure,
+    exposure: userExposure,
     speed: physics.maxSpeed,
   });
 
@@ -253,6 +259,15 @@ async function main() {
     hud.flashMode('Ровер выровнен');
   });
   input.on('KeyG', () => hud.toggle('settings'));
+  const TIME_SCALES = [0, 1, 1000, 10000, 100000];
+  input.on('KeyT', () => {
+    const i = TIME_SCALES.indexOf(clock.timeScale);
+    clock.timeScale = TIME_SCALES[(i + 1) % TIME_SCALES.length];
+    savedPrefs.timeScale = clock.timeScale; savePrefs();
+    hud.syncTimeScale();
+    hud.flashMode(`Ход времени: ${clock.timeScale === 0 ? 'пауза' : '×' + clock.timeScale}`);
+  });
+  window.addEventListener('pagehide', () => { savedPrefs.lunarT = clock.t; savedPrefs.soc = power.soc; savePrefs(); });
   input.on('KeyH', () => hud.toggle('help'));
   input.on('KeyP', () => {
     post.render(0);
@@ -279,6 +294,7 @@ async function main() {
   const hasPrev = new Array(6).fill(false);
   const rolled = new Array(6).fill(0);
   const tmpV = new THREE.Vector3();
+  const tmpQ = new THREE.Quaternion();
   let frames = 0, fpsT = 0;
 
   const syncRover = () => {
@@ -294,7 +310,37 @@ async function main() {
   tracks.follow(physics.pos.x, physics.pos.z, trackUniforms);
 
   const dustColor = new THREE.Color();
+  let autoExp = 1;
+  const smooth = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const updateSky = (dt) => {
+    clock.update(dt);
+    const elDeg = THREE.MathUtils.radToDeg(clock.sunElevation);
+    const disk = sunDisk();
+    const night = 1 - smooth(-1.5, 4, elDeg);
+    sun.position.copy(sunDir);
+    sun.intensity = 3.6 * disk;
+    earthLight.position.copy(clock.earthDir);
+    earthLight.intensity = 0.3 * clock.earthPhase * (0.15 + 0.85 * night);
+    // camera auto-exposure: long exposures at night, a little more at dawn
+    const target = (1 + 5 * night) * (1 + 0.45 * (1 - smooth(4, 25, elDeg)) * (1 - night));
+    autoExp += (target - autoExp) * (1 - Math.exp(-dt * 1.5));
+    renderer.toneMappingExposure = userExposure * autoExp;
+    sky.setClock(clock);
+    sky.uniforms.uStars.value = skyPrefs.stars ? (0.5 + 0.7 * night) / autoExp : 0;
+    sky.uniforms.uPlanetsK.value = skyPrefs.stars ? 1 / Math.pow(autoExp, 0.6) : 0;
+    sky.uniforms.uEarth.value = skyPrefs.earth ? 1 / Math.pow(autoExp, 0.55) : 0;
+    sky.uniforms.uGlare.value = disk;
+    updateEnv();
+    // re-bake horizon shadows progressively while the Sun moves
+    if (disk > 0) {
+      if (!baker.busy && baker.bakedDir && baker.bakedDir.angleTo(sunDir) > THREE.MathUtils.degToRad(0.12)) baker.begin(sunDir);
+      baker.step(clock.timeScale > 5000 ? 8 : 3);
+    }
+    return night;
+  };
+
   const update = (dt) => {
+    const night = updateSky(dt);
     acc += dt;
     let steps = 0;
     while (acc >= STEP && steps < 24) {
@@ -305,6 +351,9 @@ async function main() {
     if (steps >= 24) acc = 0;
     syncRover();
     physics.updateWheelWorld(rover);
+    rover.body.getWorldQuaternion(tmpQ);
+    solar.update(dt, sunDir, tmpQ, sunDisk() > 0);
+    physics.powerLimit = power.update(dt, { array: solar, sunDir, physics, night: night > 0.5 });
 
     // tracks & dust
     tracks.follow(physics.pos.x, physics.pos.z, trackUniforms);
@@ -337,7 +386,7 @@ async function main() {
     terrain.update(camera);
     rocks.update(camera);
     sky.update(camera, renderer);
-    dustColor.setRGB(0.36, 0.34, 0.31).multiplyScalar(sun.intensity * Math.max(0.25, sunDir.y) * 1.05);
+    dustColor.setRGB(0.36, 0.34, 0.31).multiplyScalar(sun.intensity * Math.max(0.25, sunDir.y) * 1.05 + earthLight.intensity * 0.5);
     dust.uniforms.uColor.value.copy(dustColor);
     dust.uniforms.uScale.value = renderer.getDrawingBufferSize(tmpV).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     dust.update(dt);
@@ -399,7 +448,7 @@ async function main() {
   $('hud').classList.remove('hidden');
   hud.flashMode(MODE_NAMES[rig.mode]);
   setTimeout(() => $('loader').classList.add('hidden'), 900);
-  window.__app = { renderer, scene, camera, physics, rover, terrain, rocks, data, rig, post, sun, tracks, dust, simulate, input, hud };
+  window.__app = { renderer, scene, camera, physics, rover, terrain, rocks, data, rig, post, sun, tracks, dust, simulate, input, hud, clock, power, solar, baker };
   window.__ready = true;
   requestAnimationFrame(frame);
 }

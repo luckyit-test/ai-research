@@ -55,7 +55,7 @@ export class Dust {
           vec2 d = gl_PointCoord * 2.0 - 1.0;
           float r = dot(d, d);
           if (r > 1.0) discard;
-          float a = (1.0 - r) * vAlpha * 0.8;
+          float a = (1.0 - r) * vAlpha * 0.45;
           gl_FragColor = vec4(uColor, a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -85,13 +85,13 @@ export class Dust {
    */
   spray(contact, dirX, dirZ, speed, dt, groundY, sunlit = 1) {
     if (!this.enabled) return;
-    const rate = Math.min(700, Math.abs(speed) * 260) * dt;
+    const rate = Math.min(150, Math.abs(speed) * 45) * dt;
     let n = Math.floor(rate);
     if (Math.random() < rate - n) n++;
     const back = speed >= 0 ? -1 : 1;
     for (let k = 0; k < n; k++) {
       const s = Math.abs(speed) * (0.25 + Math.random() * 0.9);
-      const up = 0.4 + Math.random() * 1.1;
+      const up = 0.3 + Math.random() * 0.8;
       const side = (Math.random() - 0.5) * 0.9;
       const vx = (dirX * back + -dirZ * side) * s * 0.8;
       const vz = (dirZ * back + dirX * side) * s * 0.8;

@@ -41,7 +41,7 @@ html, body {
   background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--line); border-radius: 10px;
 }
-.telemetry { position: absolute; left: 16px; top: 16px; padding: 12px 14px; width: 250px; pointer-events: none !important; }
+.telemetry { position: absolute; left: 16px; top: 16px; padding: 12px 14px; width: 262px; }
 .t-title { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; color: var(--dim); }
 .t-speed { font-family: var(--mono); font-size: 34px; font-weight: 600; margin: 4px 0 6px; font-variant-numeric: tabular-nums; }
 .t-speed small { font-size: 12px; color: var(--dim); margin-left: 6px; font-weight: 400; }
@@ -113,3 +113,24 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #minimap { width: 120px; height: 120px; }
   .settings, .help { left: 16px; right: 16px; width: auto; }
 }
+
+.t-sep { height: 1px; background: var(--line); margin: 10px 0 8px; }
+.t-time { display: flex; flex-direction: column; gap: 2px; }
+.t-time label, .t-power label { display: block; font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.t-time b { font-family: var(--mono); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.t-time small { font-family: var(--mono); font-size: 10px; color: var(--dim); margin-left: 6px; }
+.t-term { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.telemetry { pointer-events: none; }
+.t-speeds { display: flex; gap: 4px; margin-top: 8px; pointer-events: auto; }
+.t-speeds button {
+  flex: 1; background: rgba(255,255,255,.04); color: var(--dim); border: 1px solid var(--line); border-radius: 5px;
+  font: 500 10px var(--mono); padding: 4px 0; cursor: pointer;
+}
+.t-speeds button.on { color: #111; background: var(--accent); border-color: var(--accent); }
+.batt { position: relative; height: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: rgba(255,255,255,.04); }
+.batt-fill { position: absolute; inset: 0 auto 0 0; width: 50%; background: #7fbf7a; transition: width .3s ease, background .3s ease; }
+.batt span { position: relative; display: block; text-align: center; font: 600 11px/18px var(--mono); color: var(--fg); text-shadow: 0 0 3px #000, 0 0 2px #000; }
+.t-grid2 { margin-top: 6px; }
+.t-eta { margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.t-eta.charge { color: #8fcf8f; }
+.t-eta.warn { color: var(--accent); }

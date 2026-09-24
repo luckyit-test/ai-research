@@ -26,8 +26,16 @@ export class ShadowBaker {
       depthBuffer: false,
       generateMipmaps: false,
     };
-    this.macroRT = new THREE.WebGLRenderTarget(macroShadowRes, macroShadowRes, opts);
-    this.farRT = new THREE.WebGLRenderTarget(farShadowRes, farShadowRes, opts);
+    // double-buffered so the Sun can move while a new bake is in progress
+    this.sets = [0, 1].map(() => ({
+      macro: new THREE.WebGLRenderTarget(macroShadowRes, macroShadowRes, opts),
+      far: new THREE.WebGLRenderTarget(farShadowRes, farShadowRes, opts),
+    }));
+    this.front = 0;
+    this.job = null;
+    this.onSwap = null;
+    this._mesh = null;
+    this._cam = new THREE.Camera();
 
     this.material = new THREE.RawShaderMaterial({
       glslVersion: THREE.GLSL3,
@@ -106,13 +114,75 @@ export class ShadowBaker {
     });
   }
 
+  get macroRT() { return this.sets[this.front].macro; }
+  get farRT() { return this.sets[this.front].far; }
+
+  /** Synchronous full bake into the visible buffers. */
   bake(sunDir) {
+    this.job = null;
     const u = this.material.uniforms;
     u.uSunDir.value.copy(sunDir).normalize();
-    u.uRegion.value.set(MACRO_MIN, MACRO_MIN, MACRO_SIZE / this.macroRT.width, BAKED_NEAR_SKIP);
-    runFullscreen(this.renderer, this.material, this.macroRT, 256);
-    u.uRegion.value.set(FAR_MIN, FAR_MIN, FAR_SIZE / this.farRT.width, 0);
-    runFullscreen(this.renderer, this.material, this.farRT, 256);
+    const set = this.sets[this.front];
+    u.uRegion.value.set(MACRO_MIN, MACRO_MIN, MACRO_SIZE / set.macro.width, BAKED_NEAR_SKIP);
+    runFullscreen(this.renderer, this.material, set.macro, 256);
+    u.uRegion.value.set(FAR_MIN, FAR_MIN, FAR_SIZE / set.far.width, 0);
+    runFullscreen(this.renderer, this.material, set.far, 256);
+    this.bakedDir = sunDir.clone().normalize();
+  }
+
+  get busy() {
+    return this.job !== null;
+  }
+
+  /** Start baking into the back buffers; call step() every frame. */
+  begin(sunDir) {
+    const set = this.sets[1 - this.front];
+    const tiles = [];
+    const tile = 256;
+    for (const [rt, min, size, skip] of [[set.macro, MACRO_MIN, MACRO_SIZE, BAKED_NEAR_SKIP], [set.far, FAR_MIN, FAR_SIZE, 0]]) {
+      for (let y = 0; y < rt.height; y += tile) {
+        for (let x = 0; x < rt.width; x += tile) tiles.push({ rt, min, size, skip, x, y, w: Math.min(tile, rt.width - x), h: Math.min(tile, rt.height - y) });
+      }
+    }
+    this.job = { dir: sunDir.clone().normalize(), tiles, i: 0 };
+  }
+
+  /** Render up to maxTiles tiles of the pending bake; swaps when complete. */
+  step(maxTiles = 4) {
+    const job = this.job;
+    if (!job) return false;
+    const r = this.renderer;
+    if (!this._mesh) {
+      const tri = new THREE.BufferGeometry();
+      tri.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+      this._mesh = new THREE.Mesh(tri, this.material);
+      this._mesh.frustumCulled = false;
+    }
+    const u = this.material.uniforms;
+    u.uSunDir.value.copy(job.dir);
+    const prevTarget = r.getRenderTarget();
+    const prevAutoClear = r.autoClear;
+    r.autoClear = false;
+    for (let n = 0; n < maxTiles && job.i < job.tiles.length; n++, job.i++) {
+      const t = job.tiles[job.i];
+      u.uRegion.value.set(t.min, t.min, t.size / t.rt.width, t.skip);
+      t.rt.viewport.set(0, 0, t.rt.width, t.rt.height);
+      t.rt.scissor.set(t.x, t.y, t.w, t.h);
+      t.rt.scissorTest = true;
+      r.setRenderTarget(t.rt);
+      r.render(this._mesh, this._cam);
+      t.rt.scissorTest = false;
+    }
+    r.setRenderTarget(prevTarget);
+    r.autoClear = prevAutoClear;
+    if (job.i >= job.tiles.length) {
+      this.front = 1 - this.front;
+      this.bakedDir = job.dir;
+      this.job = null;
+      if (this.onSwap) this.onSwap(this.macroRT.texture, this.farRT.texture);
+      return true;
+    }
+    return false;
   }
 
   uniforms() {
@@ -122,3 +192,4 @@ export class ShadowBaker {
     };
   }
 }
+

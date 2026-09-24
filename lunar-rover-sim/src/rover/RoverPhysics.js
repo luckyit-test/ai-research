@@ -41,6 +41,7 @@ export class RoverPhysics {
     this.maxSpeed = 2.2;
     this.boost = 1;
     this.collided = 0;
+    this.powerLimit = 1; // 0..1 from the power system
 
     this.controls = { throttle: 0, steer: 0, brake: false, boost: false };
     this.pose = {
@@ -175,7 +176,7 @@ export class RoverPhysics {
   step(dt) {
     const c = this.controls;
     const g = LUNAR_G;
-    const vmax = this.maxSpeed * (c.boost ? 2 : 1);
+    const vmax = this.maxSpeed * (c.boost ? 2 : 1) * this.powerLimit;
     const grounded = !this.airborne;
 
     // --- drive ------------------------------------------------------------
@@ -197,7 +198,7 @@ export class RoverPhysics {
     // yaw
     const steerMax = 32 * DEG;
     let targetW;
-    if (pivotTurn) targetW = c.steer * 0.55 * (c.boost ? 1.6 : 1);
+    if (pivotTurn) targetW = c.steer * 0.55 * (c.boost ? 1.6 : 1) * this.powerLimit;
     else {
       targetW = (this.v * Math.tan(c.steer * steerMax)) / 1.12;
       // lateral grip in lunar gravity limits how hard the rover can turn at speed

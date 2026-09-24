@@ -4,16 +4,20 @@ const $ = (id) => document.getElementById(id);
 const deg = (r) => (r * 180) / Math.PI;
 
 export class Hud {
-  constructor({ data, physics, rig, sunState }) {
+  constructor({ data, physics, rig, clock, power }) {
     this.data = data;
     this.physics = physics;
     this.rig = rig;
-    this.sunState = sunState;
+    this.clock = clock;
+    this.power = power;
     this.el = {
       speed: $('h-speed'), heading: $('h-heading'), pitch: $('h-pitch'), roll: $('h-roll'),
       odo: $('h-odo'), alt: $('h-alt'), sun: $('h-sun'), status: $('h-status'),
       warning: $('warning'), camMode: $('cam-mode'), fps: $('fps'), hint: $('hint'),
+      clockEl: $('h-clock'), day: $('h-day'), term: $('h-term'),
+      battFill: $('h-batt-fill'), batt: $('h-batt'), solar: $('h-solar'), load: $('h-load'), wh: $('h-wh'), eta: $('h-eta'),
     };
+    this.speedButtons = [...document.querySelectorAll('#h-speeds button')];
     this.minimap = $('minimap');
     this.mctx = this.minimap.getContext('2d');
     this._buildHillshade();
@@ -124,11 +128,46 @@ export class Hud {
     e.roll.textContent = `${deg(p.roll).toFixed(1)}°`;
     e.odo.textContent = p.odometer < 1000 ? `${p.odometer.toFixed(0)} м` : `${(p.odometer / 1000).toFixed(2)} км`;
     e.alt.textContent = `${p.pos.y.toFixed(1)} м`;
-    e.sun.textContent = `${this.sunState.el.toFixed(0)}°`;
+    const clk = this.clock;
+    e.sun.textContent = `${deg(clk.sunElevation).toFixed(1)}°`;
+    e.clockEl.textContent = clk.clockString();
+    e.day.textContent = `сутки ${clk.day}`;
+    const term = clk.hoursToTerminatorCached ?? clk.hoursToTerminator();
+    const hrs = term.hours;
+    const span = hrs > 48 ? `${(hrs / 24).toFixed(1)} зем. сут` : `${hrs.toFixed(1)} ч`;
+    e.term.textContent = term.isDay ? `до заката ${span}` : `до рассвета ${span}`;
+    for (const b of this.speedButtons) b.classList.toggle('on', +b.dataset.ts === clk.timeScale);
+    if (document.activeElement !== this._timeSlider && this._timeSlider) {
+      this._timeSlider.value = (clk.t * 24).toFixed(2);
+      this._timeLabel.textContent = clk.clockString();
+    }
+
+    const pw = this.power;
+    const soc = pw.soc;
+    e.battFill.style.width = `${(soc * 100).toFixed(1)}%`;
+    e.battFill.style.background = soc < 0.08 ? '#e0664f' : soc < 0.25 ? '#f2b45a' : '#7fbf7a';
+    e.batt.textContent = `${(soc * 100).toFixed(soc < 0.1 ? 1 : 0)}%`;
+    e.solar.textContent = `${pw.solarW.toFixed(0)} Вт`;
+    e.load.textContent = `${pw.loadW.toFixed(0)} Вт`;
+    e.wh.textContent = `${(pw.energy / 1000).toFixed(2)} кВт·ч`;
+    const eta = pw.eta();
+    let etaText = '', etaCls = '';
+    if (pw.mode === 'depleted') { etaText = 'БАТАРЕЯ РАЗРЯЖЕНА — ХОД НЕВОЗМОЖЕН'; etaCls = 'warn'; }
+    else if (eta) {
+      const m = eta.minutes;
+      const t = m > 90 ? `${(m / 60).toFixed(1)} ч` : `${Math.max(1, Math.round(m))} мин`;
+      if (eta.charging) { etaText = soc > 0.995 ? 'заряжена' : `зарядка · до полной ${t}`; etaCls = 'charge'; }
+      else { etaText = `разряд · хватит на ${t}`; etaCls = soc < 0.25 ? 'warn' : ''; }
+    }
+    if (pw.sunVis < 0.5 && clk.sunDir.y > 0) etaText += ' · панели в тени';
+    e.eta.textContent = etaText;
+    e.eta.className = 't-eta ' + etaCls;
 
     let warn = '';
     const tilt = Math.max(Math.abs(deg(p.pitch)), Math.abs(deg(p.roll)));
-    if (p.airborne && p.airTime > 0.25) warn = 'ОТРЫВ ОТ ГРУНТА';
+    if (this.power.mode === 'depleted') warn = 'НЕТ ЭНЕРГИИ — ЖДИТЕ СОЛНЦА';
+    else if (this.power.mode === 'low') warn = 'НИЗКИЙ ЗАРЯД — ХОД ОГРАНИЧЕН';
+    else if (p.airborne && p.airTime > 0.25) warn = 'ОТРЫВ ОТ ГРУНТА';
     else if (p.collided > 0) warn = 'ПРЕПЯТСТВИЕ';
     else if (tilt > 22) warn = 'КРУТОЙ СКЛОН';
     e.warning.textContent = warn;
@@ -147,14 +186,18 @@ export class Hud {
     const q = $('s-quality');
     q.value = o.quality;
     q.onchange = () => o.onQuality(q.value);
-    const az = $('s-az'), el = $('s-el'), vaz = $('v-az'), vel = $('v-el');
-    az.value = this.sunState.az;
-    el.value = this.sunState.el;
-    const showSun = () => { vaz.textContent = `${Math.round(az.value)}°`; vel.textContent = `${(+el.value).toFixed(1)}°`; };
-    showSun();
-    const sunInput = (final) => () => { showSun(); o.onSun(+az.value, +el.value, final); };
-    az.oninput = sunInput(false); el.oninput = sunInput(false);
-    az.onchange = sunInput(true); el.onchange = sunInput(true);
+    const ts = $('s-time'), vts = $('v-time');
+    this._timeSlider = ts;
+    this._timeLabel = vts;
+    ts.value = (this.clock.t * 24).toFixed(2);
+    vts.textContent = this.clock.clockString();
+    ts.oninput = () => o.onTime(+ts.value / 24, false);
+    ts.onchange = () => o.onTime(+ts.value / 24, true);
+    const tsc = $('s-timescale');
+    tsc.value = String(this.clock.timeScale);
+    tsc.onchange = () => o.onTimeScale(+tsc.value);
+    this._timeScaleSelect = tsc;
+    for (const b of this.speedButtons) b.onclick = () => { o.onTimeScale(+b.dataset.ts); tsc.value = b.dataset.ts; };
     const ex = $('s-exp'), vex = $('v-exp');
     ex.value = o.exposure;
     vex.textContent = (+ex.value).toFixed(2);
@@ -165,15 +208,14 @@ export class Hud {
     const toggles = { 't-ao': 'ao', 't-bloom': 'bloom', 't-film': 'film', 't-stars': 'stars', 't-earth': 'earth', 't-dust': 'dust', 't-tracks': 'tracks', 't-hud': 'minimap' };
     for (const [id, key] of Object.entries(toggles)) {
       const box = $(id);
-      const def = key === 'stars' ? false : true;
+      const def = true;
       box.checked = o.prefs[key] === undefined ? def : !!o.prefs[key];
       box.onchange = () => o.onToggle(key, box.checked);
     }
   }
 
-  syncSun() {
-    $('s-az').value = this.sunState.az;
-    $('s-el').value = this.sunState.el;
+  syncTimeScale() {
+    if (this._timeScaleSelect) this._timeScaleSelect.value = String(this.clock.timeScale);
   }
 
   setupTouch(input, enabled) {

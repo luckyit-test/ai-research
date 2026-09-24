@@ -32,6 +32,28 @@
           <div><label>Высота</label><b id="h-alt">0 м</b></div>
           <div><label>Солнце</label><b id="h-sun">20°</b></div>
         </div>
+        <div class="t-sep"></div>
+        <div class="t-time">
+          <div><label>Лунное время</label><b id="h-clock">07:36</b><small id="h-day">сутки 1</small></div>
+          <div class="t-term" id="h-term">до заката 307 ч</div>
+        </div>
+        <div class="t-speeds" id="h-speeds">
+          <button data-ts="0" title="Пауза">❚❚</button>
+          <button data-ts="1" title="Реальное время">×1</button>
+          <button data-ts="1000">×1000</button>
+          <button data-ts="10000">×10⁴</button>
+          <button data-ts="100000">×10⁵</button>
+        </div>
+        <div class="t-sep"></div>
+        <div class="t-power">
+          <div class="batt"><div class="batt-fill" id="h-batt-fill"></div><span id="h-batt">78%</span></div>
+          <div class="t-grid t-grid2">
+            <div><label>Панели</label><b id="h-solar">0 Вт</b></div>
+            <div><label>Нагрузка</label><b id="h-load">0 Вт</b></div>
+            <div><label>Запас</label><b id="h-wh">0 Вт·ч</b></div>
+          </div>
+          <div class="t-eta" id="h-eta"></div>
+        </div>
         <div class="t-status" id="h-status">СВЯЗЬ УСТАНОВЛЕНА</div>
       </div>
 
@@ -59,8 +81,16 @@
             <option value="ultra">Ультра</option>
           </select>
         </div>
-        <div class="row"><label>Солнце: азимут</label><input type="range" id="s-az" min="0" max="360" step="1" /><span id="v-az"></span></div>
-        <div class="row"><label>Солнце: высота</label><input type="range" id="s-el" min="3" max="75" step="0.5" /><span id="v-el"></span></div>
+        <div class="row"><label>Лунное время</label><input type="range" id="s-time" min="0" max="24" step="0.05" /><span id="v-time"></span></div>
+        <div class="row"><label>Ход времени</label>
+          <select id="s-timescale">
+            <option value="0">Пауза</option>
+            <option value="1">Реальный (×1)</option>
+            <option value="1000">×1000 — Солнце ~0,15°/с</option>
+            <option value="10000">×10 000</option>
+            <option value="100000">×100 000 — сутки за 26 с</option>
+          </select>
+        </div>
         <div class="row"><label>Экспозиция</label><input type="range" id="s-exp" min="0.4" max="2.2" step="0.01" /><span id="v-exp"></span></div>
         <div class="row"><label>Скорость</label>
           <select id="s-speed">
@@ -74,7 +104,7 @@
           <label><input type="checkbox" id="t-ao" checked /> Ambient occlusion</label>
           <label><input type="checkbox" id="t-bloom" checked /> Блики</label>
           <label><input type="checkbox" id="t-film" checked /> Плёнка</label>
-          <label><input type="checkbox" id="t-stars" /> Звёзды</label>
+          <label><input type="checkbox" id="t-stars" checked /> Звёзды и планеты</label>
           <label><input type="checkbox" id="t-earth" checked /> Земля</label>
           <label><input type="checkbox" id="t-dust" checked /> Пыль</label>
           <label><input type="checkbox" id="t-tracks" checked /> Следы</label>
@@ -95,9 +125,11 @@
           <tr><td>Мышь / колесо</td><td>обзор и зум</td></tr>
           <tr><td>R</td><td>вернуть ровер на колёса</td></tr>
           <tr><td>G / H</td><td>настройки / помощь</td></tr>
+          <tr><td>T</td><td>ход лунного времени: пауза / ×1 / ×1000 / ×10⁴ / ×10⁵</td></tr>
           <tr><td>P</td><td>скриншот</td></tr>
         </table>
         <p>Гравитация Луны — 1,62 м/с². На гребнях ровер отрывается от грунта и летит по баллистике, пыль из-под колёс — без сопротивления воздуха. Подвеска rocker-bogie переваливает камни высотой до диаметра колеса.</p>
+        <p>Лунные сутки длятся 29,5 земных дня: около 15 дней Солнце над горизонтом, потом ночь, которую освещает только Земля. Панели на мачте сами поворачиваются к Солнцу. Ночью, в тени кратера и на подъёмах батарея садится быстрее. Ниже 8% заряда ход ограничен, при 0% ровер стоит, пока не зарядится. Баланс энергии считается в реальном времени, ускоряется только движение Солнца.</p>
       </div>
 
       <div id="touch" class="hidden">
