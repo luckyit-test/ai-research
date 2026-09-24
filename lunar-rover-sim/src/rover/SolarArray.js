@@ -43,7 +43,7 @@ function frameGeometry(w, d, bar) {
     rib.translate(-w / 2 + (i * w) / 4, -0.016, 0);
     ribs.push(rib);
   }
-  return mergeGeometries([g.toNonIndexed(), ...ribs.map((r) => r.toNonIndexed())]);
+  return mergeGeometries([g, ...ribs]);
 }
 
 function cellSheet(w, d) {
