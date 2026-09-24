@@ -246,7 +246,7 @@ export class TerrainMesh {
     this.casterGeometry.setAttribute('aNode', this.casterAttr);
     this.casterGeometry.instanceCount = 0;
     this.casterCount = 0;
-    const casterUniforms = { ...this.uniforms, uHeightOffset: { value: -0.12 } };
+    const casterUniforms = { ...this.uniforms, uHeightOffset: { value: -0.22 } };
     const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     depthMat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, casterUniforms);

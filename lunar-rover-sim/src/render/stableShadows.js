@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SunLightShadow } from 'three/examples/jsm/lights/SunLightShadow.js';
 
 // three.js r186 filters PCF shadows with 5 taps rotated by screen-space noise.
 // As the camera moves that noise slides over the penumbra, so shadow edges
@@ -24,3 +25,28 @@ if (start >= 0 && end > start) {
 } else {
   console.warn('stableShadows: PCF chunk not found, keeping the default filter');
 }
+
+// The sun cascades are refitted to the view frustum every frame. Their XY is
+// snapped to texels, but the depth range (near plane position and far) moves
+// continuously with the camera, so depth quantisation and bias change every
+// frame and terrain self-shadowing flickers. Snap the depth range too.
+
+const _fwd = new THREE.Vector3();
+const DEPTH_STEP = 64; // m
+const FAR_STEP = 256; // m
+const original = SunLightShadow.prototype.updateMatrices;
+SunLightShadow.prototype.updateMatrices = function (light, viewCamera) {
+  original.call(this, light, viewCamera);
+  if (viewCamera === undefined) return;
+  for (let i = 0; i < this._cameras.length; i++) {
+    const cam = this._cameras[i];
+    cam.getWorldDirection(_fwd);
+    const s = cam.position.dot(_fwd);
+    const delta = s - Math.floor(s / DEPTH_STEP) * DEPTH_STEP;
+    cam.position.addScaledVector(_fwd, -delta);
+    cam.far = Math.ceil((cam.far + delta) / FAR_STEP) * FAR_STEP;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    this._updateMatrix(cam, this._matrices[i], this._frustums[i], this._viewports[i]);
+  }
+};

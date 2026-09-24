@@ -11,7 +11,7 @@ const FinalShader = {
   uniforms: {
     tDiffuse: { value: null },
     uTime: { value: 0 },
-    uGrain: { value: 0.035 },
+    uGrain: { value: 0 },
     uVignette: { value: 0.32 },
     uAberration: { value: 0.0014 },
     uContrast: { value: 1.09 },

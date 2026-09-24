@@ -163,7 +163,7 @@ async function main() {
   progress(0.68, 'Лунный грунт');
   const tracks = new Tracks(renderer, { size: 128, res: Q.tracks });
   const trackUniforms = tracks.uniforms();
-  const terrain = new TerrainMesh(data, { ...trackUniforms, uTrackStrength: { value: 1 } }, { segments: Q.seg, casterSegments: 32, lodK: Q.lodK });
+  const terrain = new TerrainMesh(data, { ...trackUniforms, uTrackStrength: { value: 1 } }, { segments: Q.seg, casterSegments: 48, lodK: Q.lodK });
   scene.add(terrain.group);
 
   progress(0.74, 'Камни и валуны');
@@ -242,7 +242,7 @@ async function main() {
     const p = savedPrefs;
     if (post.aoPass) post.aoPass.enabled = p.ao !== false;
     if (post.bloomPass) post.bloomPass.enabled = p.bloom !== false;
-    post.finalPass.uniforms.uGrain.value = p.film === false ? 0 : 0.035;
+    post.finalPass.uniforms.uGrain.value = 0; // animated grain read as flickering shadows
     post.finalPass.uniforms.uVignette.value = p.film === false ? 0.12 : 0.32;
     post.finalPass.uniforms.uAberration.value = p.film === false ? 0 : 0.0014;
     skyPrefs.stars = p.stars !== false;
@@ -345,7 +345,7 @@ async function main() {
     const night = 1 - smooth(-1.5, 4, elDeg);
     // the shadow direction moves in small steps: re-rasterising the shadow
     // map every frame for a slowly moving Sun makes every edge crawl
-    if (!shadowSunDir || shadowSunDir.angleTo(sunDir) > 0.0006) {
+    if (!shadowSunDir || shadowSunDir.angleTo(sunDir) > 0.0035) {
       shadowSunDir = (shadowSunDir || new THREE.Vector3()).copy(sunDir);
       sun.position.copy(sunDir);
     }
@@ -372,14 +372,10 @@ async function main() {
 
   const update = (dt) => {
     const night = updateSky(dt);
-    acc += dt;
-    let steps = 0;
-    while (acc >= STEP && steps < 24) {
-      physics.step(STEP);
-      acc -= STEP;
-      steps++;
-    }
-    if (steps >= 24) acc = 0;
+    // equal sub-steps every frame: the rover moves exactly in sync with the
+    // camera (a fixed 120 Hz step makes it judder against a 60/144 Hz display)
+    const steps = Math.min(24, Math.max(1, Math.ceil(dt / STEP - 1e-6)));
+    for (let i = 0; i < steps; i++) physics.step(dt / steps);
     syncRover();
     physics.updateWheelWorld(rover);
     rover.body.getWorldQuaternion(tmpQ);
@@ -425,7 +421,7 @@ async function main() {
 
   let paused = params.has('test');
   // dynamic resolution: keep the frame rate smooth on weaker GPUs
-  const dyn = { scale: 1, min: 0.55, t: 0, n: 0, sum: 0, enabled: !params.has('test') && savedPrefs.dynres !== false };
+  const dyn = { scale: 1, min: 0.55, t: 0, n: 0, sum: 0, bad: 0, good: 0, enabled: !params.has('test') && savedPrefs.dynres !== false };
   const applyScale = () => {
     renderer.setPixelRatio(pixelRatio * dyn.scale);
     renderer.setSize(innerWidth, innerHeight);
@@ -440,8 +436,11 @@ async function main() {
       if (dyn.t > 1.5) {
         const avg = dyn.sum / dyn.n;
         let next = dyn.scale;
-        if (avg > 1 / 42) next = Math.max(dyn.min, dyn.scale * 0.85);
-        else if (avg < 1 / 57 && dyn.scale < 1) next = Math.min(1, dyn.scale * 1.08);
+        // hysteresis: resolution changes are visible, so only react to sustained trends
+        dyn.bad = avg > 1 / 40 ? dyn.bad + 1 : 0;
+        dyn.good = avg < 1 / 58 ? dyn.good + 1 : 0;
+        if (dyn.bad >= 2) { next = Math.max(dyn.min, dyn.scale * 0.85); dyn.bad = 0; }
+        else if (dyn.good >= 5 && dyn.scale < 1) { next = Math.min(1, dyn.scale * 1.1); dyn.good = 0; }
         if (Math.abs(next - dyn.scale) > 0.01) { dyn.scale = next; applyScale(); }
         dyn.t = dyn.sum = dyn.n = 0;
       }
