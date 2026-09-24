@@ -61,6 +61,7 @@ export class RoverPhysics {
     this._e = new THREE.Euler(0, 0, 0, 'YXZ');
     this._v = new THREE.Vector3();
     this._target = { y: 0, pitch: 0, roll: 0 };
+    this._poseT = { rL: 0, rR: 0, bL: 0, bR: 0 };
   }
 
   reset(x, z, yaw = 0) {
@@ -69,6 +70,8 @@ export class RoverPhysics {
     this.v = this.w = this.vy = this.pitchRate = this.rollRate = 0;
     this._sol.L.a = this._sol.L.b = this._sol.R.a = this._sol.R.b = 0;
     this._solve();
+    this.pose.rocker.L = this._poseT.rL; this.pose.rocker.R = this._poseT.rR;
+    this.pose.bogie.L = this._poseT.bL; this.pose.bogie.R = this._poseT.bR;
     this.pos.y = this._target.y;
     this.pitch = this._target.pitch;
     this.roll = this._target.roll;
@@ -161,10 +164,11 @@ export class RoverPhysics {
     this._target.pitch = pitch;
     this._target.roll = roll;
     // articulation relative to the body (differential keeps them opposite)
-    this.pose.rocker.L = L.a - pitch;
-    this.pose.rocker.R = R.a - pitch;
-    this.pose.bogie.L = L.b - L.a;
-    this.pose.bogie.R = R.b - R.a;
+    const pt = this._poseT;
+    pt.rL = L.a - pitch;
+    pt.rR = R.a - pitch;
+    pt.bL = L.b - L.a;
+    pt.bR = R.b - R.a;
     return this._target;
   }
 
@@ -231,6 +235,16 @@ export class RoverPhysics {
 
     // --- suspension & attitude ------------------------------------------
     const tgt = this._solve();
+    // the linkage solve re-samples rocks and grains every step; low-pass the
+    // articulation so wheels and their shadows do not shake
+    if (!this.airborne) {
+      const k = 1 - Math.exp(-dt / 0.12);
+      const pt = this._poseT, po = this.pose;
+      po.rocker.L += (pt.rL - po.rocker.L) * k;
+      po.rocker.R += (pt.rR - po.rocker.R) * k;
+      po.bogie.L += (pt.bL - po.bogie.L) * k;
+      po.bogie.R += (pt.bR - po.bogie.R) * k;
+    }
     const k = 90, d = 2 * Math.sqrt(k) * 0.9;
     const above = this.pos.y - tgt.y;
     if (above > 0.03) {

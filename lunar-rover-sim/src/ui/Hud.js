@@ -152,7 +152,7 @@ export class Hud {
     e.wh.textContent = `${(pw.energy / 1000).toFixed(2)} кВт·ч`;
     const eta = pw.eta();
     let etaText = '', etaCls = '';
-    if (pw.mode === 'depleted') { etaText = 'БАТАРЕЯ РАЗРЯЖЕНА — ХОД НЕВОЗМОЖЕН'; etaCls = 'warn'; }
+    if (pw.mode === 'depleted') { etaText = 'батарея разряжена — аварийный ход 15%'; etaCls = 'warn'; }
     else if (eta) {
       const m = eta.minutes;
       const t = m > 90 ? `${(m / 60).toFixed(1)} ч` : `${Math.max(1, Math.round(m))} мин`;
@@ -165,7 +165,7 @@ export class Hud {
 
     let warn = '';
     const tilt = Math.max(Math.abs(deg(p.pitch)), Math.abs(deg(p.roll)));
-    if (this.power.mode === 'depleted') warn = 'НЕТ ЭНЕРГИИ — ЖДИТЕ СОЛНЦА';
+    if (this.power.mode === 'depleted') warn = 'БАТАРЕЯ РАЗРЯЖЕНА — АВАРИЙНЫЙ ХОД';
     else if (this.power.mode === 'low') warn = 'НИЗКИЙ ЗАРЯД — ХОД ОГРАНИЧЕН';
     else if (p.airborne && p.airTime > 0.25) warn = 'ОТРЫВ ОТ ГРУНТА';
     else if (p.collided > 0) warn = 'ПРЕПЯТСТВИЕ';

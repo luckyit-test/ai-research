@@ -123,7 +123,7 @@ vec2 tGrad = tMi.xy + (tDa.yz + DB_AMP * (transpose(DB_ROT) * tDb.yz)) * tBw;
 vec4 tM1 = texture(uMicro, tp / MICRO_TILE);
 vec4 tM2 = texture(uMicro, (mat2(0.28, 0.96, -0.96, 0.28) * tp) / (MICRO_TILE * 0.37) + 0.31);
 float tMf = 1.0 - smoothstep(12.0, 80.0, tDist);
-vec2 tGm = ((tM1.xy - 0.5) * 1.1 + (tM2.xy - 0.5) * 0.6) * tMf;
+vec2 tGm = ((tM1.xy - 0.5) * 1.1 + (tM2.xy - 0.5) * 0.6) * tMf * (1.0 - 0.6 * uPhoto);
 tGrad += tGm;
 // mid-distance rubble: the micro tile scaled up reads as scattered stones
 vec4 tM3 = texture(uMicro, (mat2(0.8, 0.6, -0.6, 0.8) * tp) / (MICRO_TILE * 7.0) + 0.71);
@@ -137,19 +137,19 @@ float tMott = texture(uMicro, (mat2(0.6, -0.8, 0.8, 0.6) * tp) / (MICRO_TILE * 9
 // with rubble patches where the ground is rocky
 const mat2 PR1 = mat2(0.94, 0.34, -0.34, 0.94);
 const mat2 PR2 = mat2(-0.47, 0.88, -0.88, -0.47);
-vec2 pu1 = (PR1 * tp) / 1.7;
-vec2 pu2 = (PR2 * tp) / 5.9 + 0.37;
+vec2 pu1 = (PR1 * tp) / 2.6;
+vec2 pu2 = (PR2 * tp) / 7.3 + 0.37;
 vec3 pa1 = texture(uRegA, pu1).rgb;
 vec3 pa2 = texture(uRegA, pu2).rgb;
 float pmix = smoothstep(-0.25, 0.25, tMott);
 vec3 pAlb = mix(pa1, pa2, 0.35 + 0.3 * pmix);
 vec2 pGrad = mix(nrmGrad(texture(uRegN, pu1)), nrmGrad(texture(uRegN, pu2)) * 0.45, 0.35);
-vec2 ru = (mat2(0.2, -0.98, 0.98, 0.2) * tp) / 3.3 + 0.61;
-float rubble = clamp(smoothstep(0.05, 0.5, max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw + (tMott + 0.1) * 0.9), 0.0, 1.0) * 0.85;
+vec2 ru = (mat2(0.2, -0.98, 0.98, 0.2) * tp) / 4.6 + 0.61;
+float rubble = clamp(0.3 + smoothstep(0.05, 0.5, max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw + (tMott + 0.1) * 0.9), 0.0, 1.0) * 0.9;
 pAlb = mix(pAlb, texture(uRubA, ru).rgb, rubble);
 pGrad = mix(pGrad, nrmGrad(texture(uRubN, ru)), rubble);
-float pNf = (1.0 - smoothstep(20.0, 140.0, tDist)) * uPhoto;
-tGrad += pGrad * 0.32 * pNf;
+float pNf = (1.0 - smoothstep(30.0, 180.0, tDist)) * uPhoto;
+tGrad += pGrad * 0.6 * pNf;
 
 // rover tracks
 float tRut = 0.0;
@@ -173,7 +173,7 @@ float tEj = max(tMi.z, max(tDa.w, tDb.w) * 0.7) * tBw;
 float tAlb = uAlbedo * (1.0 + tMi.w * 0.16);
 tAlb *= 1.0 + tEj * 0.45;
 tAlb *= 1.0 + ((tM1.z - 0.5) * 0.3 + (tM2.z - 0.5) * 0.18) * tMf * (1.0 - uPhoto * 0.7) + tMott * 0.22 + (tM3.z - 0.5) * 0.3 * tRf;
-vec3 pCol = mix(vec3(1.0), pAlb * 2.0, uPhoto);
+vec3 pCol = mix(vec3(1.0), max(vec3(0.0), (pAlb * 2.0 - 1.0) * 1.5 + 1.0), uPhoto);
 tAlb *= 1.0 + smoothstep(0.08, 0.45, tSlope) * 0.25;
 tAlb *= 1.0 - tRut * 0.22;
 diffuseColor.rgb = vec3(tAlb) * uAlbedoTint * pCol;

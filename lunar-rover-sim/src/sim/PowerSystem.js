@@ -76,7 +76,8 @@ export class PowerSystem {
     const soc = this.soc;
     this.mode = soc <= 0.002 ? 'depleted' : soc < 0.08 ? 'low' : 'normal';
     // what the drive system is allowed to do
-    return this.mode === 'depleted' ? 0 : this.mode === 'low' ? 0.3 : 1;
+    // a flat battery still allows an emergency crawl so the rover is never stuck
+    return this.mode === 'depleted' ? 0.15 : this.mode === 'low' ? 0.35 : 1;
   }
 
   /** Human readable estimate of time to full / empty (real minutes). */

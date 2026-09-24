@@ -99,7 +99,7 @@ async function main() {
   const clock = new LunarClock({
     latitude: 26,
     dayFraction: savedPrefs.lunarT ?? 0.317,
-    timeScale: savedPrefs.timeScale ?? 1000,
+    timeScale: 1, // real time on start: a moving Sun costs shadow re-bakes
   });
   const sunDir = clock.sunDir;
 
@@ -176,12 +176,14 @@ async function main() {
   {
     const loader = new THREE.TextureLoader();
     const maxAniso = renderer.capabilities.getMaxAnisotropy();
-    const load = (name) => new Promise((resolve) => loader.load(`./textures/${name}`, (t) => {
+    // hosts that cannot serve images cross-origin get the textures as data URLs
+    const embedded = window.TEXTURES_MODULE_URL ? import(/* @vite-ignore */ window.TEXTURES_MODULE_URL).then((m) => m.default).catch(() => null) : Promise.resolve(null);
+    const load = (name) => embedded.then((emb) => new Promise((resolve) => loader.load(emb && emb[name] ? emb[name] : `./textures/${name}`, (t) => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.anisotropy = Math.min(8, maxAniso);
       t.colorSpace = THREE.NoColorSpace;
       resolve(t);
-    }, undefined, () => resolve(null)));
+    }, undefined, (err) => { console.warn('texture failed', name, err); resolve(null); })));
     Promise.all(['regolith_albedo.jpg', 'regolith_normal.jpg', 'rubble_albedo.jpg', 'rubble_normal.jpg',
       'basalt_albedo.jpg', 'basalt_normal.jpg', 'breccia_albedo.jpg', 'breccia_normal.jpg'].map(load)).then((t) => {
       if (t.some((x) => !x)) { console.warn('surface textures missing, using procedural look'); return; }
@@ -215,7 +217,7 @@ async function main() {
   rover.body.add(solar.root);
   for (const m of [...rover.materials, ...solar.materials]) patchMaterial(m, { brdf: false });
   scene.add(rover.root);
-  const power = new PowerSystem(data, { capacityWh: 4000, soc: savedPrefs.soc ?? 0.78 });
+  const power = new PowerSystem(data, { capacityWh: 4000, soc: 0.8 });
 
   // --- physics ------------------------------------------------------------
   const ground = {
@@ -292,7 +294,7 @@ async function main() {
     hud.syncTimeScale();
     hud.flashMode(`Ход времени: ${clock.timeScale === 0 ? 'пауза' : '×' + clock.timeScale}`);
   });
-  window.addEventListener('pagehide', () => { savedPrefs.lunarT = clock.t; savedPrefs.soc = power.soc; savePrefs(); });
+  window.addEventListener('pagehide', () => { savedPrefs.lunarT = clock.t; delete savedPrefs.soc; savePrefs(); });
   input.on('KeyH', () => hud.toggle('help'));
   input.on('KeyP', () => {
     post.render(0);
@@ -364,8 +366,8 @@ async function main() {
     updateEnv();
     // re-bake horizon shadows progressively while the Sun moves
     if (disk > 0) {
-      if (!baker.busy && baker.bakedDir && baker.bakedDir.angleTo(sunDir) > THREE.MathUtils.degToRad(0.12)) baker.begin(sunDir);
-      baker.step(clock.timeScale > 5000 ? 8 : 3);
+      if (!baker.busy && baker.bakedDir && baker.bakedDir.angleTo(sunDir) > THREE.MathUtils.degToRad(0.5)) baker.begin(sunDir);
+      baker.step(clock.timeScale > 5000 ? 4 : 1);
     }
     return night;
   };
